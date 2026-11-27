@@ -23,6 +23,7 @@ from .PropsDialog import PropsDialog
 from ..core import Messages
 from ..core.Connection import Connection
 from ..core.blocks import Block
+from ..core.utils import macos
 
 
 log = logging.getLogger(__name__)
@@ -76,6 +77,8 @@ class Application(Gtk.Application):
     def do_startup(self):
         Gtk.Application.do_startup(self)
         log.debug("Application.do_startup()")
+        macos.setup_application_identity(
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png"))
 
     def do_activate(self):
         Gtk.Application.do_activate(self)

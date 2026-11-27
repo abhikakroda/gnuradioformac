@@ -28,7 +28,7 @@ set(CPACK_PACKAGE_COPYRIGHT           "Copyright © 2009-${CURRENT_YEAR} Free So
 
 if(APPLE)
   set(CPACK_PACKAGE_ICON
-    "${GNURadio_SOURCE_DIR}/release/resources/icons/gnuradio_logo_icon-square.ico")
+    "${GNURadio_SOURCE_DIR}/release/resources/icons/gnuradio-companion.icns")
   set(CPACK_BUNDLE_ICON "${CPACK_PACKAGE_ICON}")
   # set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY ON)
   # set(CPACK_DMG_DISABLE_APPLICATIONS_SYMLINK ON)

@@ -27,6 +27,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
 # Custom modules
+from ..core.utils import macos
 from . import components
 from .helpers.profiling import StopWatch
 
@@ -55,6 +56,7 @@ class Application(QApplication):
         log.debug("Creating QApplication instance")
         QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
         QApplication.__init__(self, settings.argv)
+        macos.setup_application_identity(settings.path.ICON)
 
         self.theme = "light"
         if self.qsettings.value("appearance/theme", "dark") == "dark":

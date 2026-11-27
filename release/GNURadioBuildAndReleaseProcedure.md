@@ -242,6 +242,18 @@ Starting from the directory above where GNU Radio's source is checked out:
 4. We're now ready to build GR, from the build directory: `cmake .. -GNinja -DGR_BUILD_INSTALLER=ON -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON`
 5. Then from the build directory `cpack -GDragNDrop` for GR and `cpack -Gproductbuild` for GR OOT Modules
 
+The DragNDrop image contains `GNU Radio Companion.app` next to `bin/` and `lib/`. The bundle is created by `cmake/Modules/GrMacOSBundle.cmake` (turn it off with `-DENABLE_MACOS_APP_BUNDLE=OFF`) and has this layout:
+
+```
+GNU Radio Companion.app/Contents/Info.plist                    LSUIElement=false, CFBundleIconFile=gnuradio-companion
+GNU Radio Companion.app/Contents/MacOS/GNU Radio Companion     launcher; finds the install tree and starts bin/gnuradio-companion
+GNU Radio Companion.app/Contents/Resources/gnuradio-companion.icns
+```
+
+Without `GR_BUILD_INSTALLER` the bundle is installed to `<prefix>/Applications`; override with `-DGR_MACOS_APP_DESTINATION=<path relative to the prefix>`. The Dock icon comes from the `.icns` through the bundle's Info.plist, and `grc/core/utils/macos.py` also applies it (and the process name) from inside GRC, because the launcher hands over to the Python interpreter.
+
+The `.icns` is committed. To regenerate it from the logo SVG, run `pip install cairosvg pillow` and `python3 release/resources/macos/make_icon.py`.
+
 ## Troubleshooting
 
 ### Qt

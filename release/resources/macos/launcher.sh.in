@@ -1,0 +1,76 @@
+#!/bin/bash
+#
+# Copyright 2026 Free Software Foundation, Inc.
+#
+# This file is part of GNU Radio
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Entry point of "@GR_MACOS_APP_NAME@.app" (CFBundleExecutable).
+# Locates the GNU Radio install the bundle belongs to and starts the
+# GNU Radio Companion script of that install with the matching Python.
+
+fail() {
+    /usr/bin/osascript -e "display alert \"@GR_MACOS_APP_NAME@\" message \"$1\" as critical" >/dev/null 2>&1
+    echo "@GR_MACOS_APP_NAME@: $1" >&2
+    exit 1
+}
+
+SELF="${BASH_SOURCE[0]}"
+while [ -L "$SELF" ]; do
+    LINK="$(readlink "$SELF")"
+    case "$LINK" in
+        /*) SELF="$LINK" ;;
+        *) SELF="$(dirname "$SELF")/$LINK" ;;
+    esac
+done
+MACOS_DIR="$(cd "$(dirname "$SELF")" && pwd -P)"
+CONTENTS_DIR="$(dirname "$MACOS_DIR")"
+APP_DIR="$(dirname "$CONTENTS_DIR")"
+
+# The bundle lives inside (or next to) the GNU Radio install tree; walk up
+# until the tree that holds bin/@GR_MACOS_APP_PROGRAM@ is found.
+PREFIX="${GR_PREFIX:-}"
+if [ -z "$PREFIX" ]; then
+    DIR="$APP_DIR"
+    while [ "$DIR" != "/" ]; do
+        DIR="$(dirname "$DIR")"
+        if [ -f "$DIR/@GR_RUNTIME_DIR@/@GR_MACOS_APP_PROGRAM@" ]; then
+            PREFIX="$DIR"
+            break
+        fi
+    done
+fi
+if [ -z "$PREFIX" ] && [ -f "@CMAKE_INSTALL_PREFIX@/@GR_RUNTIME_DIR@/@GR_MACOS_APP_PROGRAM@" ]; then
+    PREFIX="@CMAKE_INSTALL_PREFIX@"
+fi
+[ -n "$PREFIX" ] || fail "Could not find the GNU Radio installation this application belongs to."
+
+PROGRAM="$PREFIX/@GR_RUNTIME_DIR@/@GR_MACOS_APP_PROGRAM@"
+
+# Prefer the Python shipped with the installer, otherwise the one on PATH.
+if [ -x "$PREFIX/@GR_RUNTIME_DIR@/python.exe" ]; then
+    PYTHON="$PREFIX/@GR_RUNTIME_DIR@/python.exe"
+else
+    PYTHON="$(command -v python3)"
+fi
+[ -n "$PYTHON" ] || fail "Python 3 was not found."
+
+export PYTHONPATH="$PREFIX/@GR_PYTHON_DIR@${PYTHONPATH:+:$PYTHONPATH}"
+export PATH="$PREFIX/@GR_RUNTIME_DIR@:$PATH"
+
+# Used by grc.core.utils.macos to give the running process its Dock icon
+# and name when the interpreter is not itself the bundle executable.
+export GRC_MACOS_APP_ICON="$CONTENTS_DIR/Resources/@GR_MACOS_APP_ICON_NAME@.icns"
+export GRC_MACOS_APP_NAME="@GR_MACOS_APP_NAME@"
+
+# Finder/LaunchServices may add a process serial number argument.
+ARGS=()
+for arg in "$@"; do
+    case "$arg" in
+        -psn_*) ;;
+        *) ARGS+=("$arg") ;;
+    esac
+done
+
+exec "$PYTHON" "$PROGRAM" "${ARGS[@]}"

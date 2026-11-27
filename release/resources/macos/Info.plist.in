@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>@GR_MACOS_APP_EXECUTABLE@</string>
+    <key>CFBundleIconFile</key>
+    <string>@GR_MACOS_APP_ICON_NAME@</string>
+    <key>CFBundleIdentifier</key>
+    <string>@GR_MACOS_APP_IDENTIFIER@</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>@GR_MACOS_APP_NAME@</string>
+    <key>CFBundleDisplayName</key>
+    <string>@GR_MACOS_APP_NAME@</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleSignature</key>
+    <string>????</string>
+    <key>CFBundleShortVersionString</key>
+    <string>@GR_MACOS_APP_VERSION@</string>
+    <key>CFBundleVersion</key>
+    <string>@GR_MACOS_APP_BUILD_VERSION@</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.developer-tools</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>@GR_MACOS_APP_MIN_SYSTEM_VERSION@</string>
+    <key>LSUIElement</key>
+    <false/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>GNU Radio flowgraphs can record audio from the microphone through the Audio Source block.</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>@GR_MACOS_APP_COPYRIGHT@</string>
+</dict>
+</plist>

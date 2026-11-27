@@ -259,7 +259,7 @@ endif()
 ########################################################################
 if(APPLE)
     cmake_policy(SET CMP0068 NEW)
-    set(MACOSX_BUNDLE_ICON_FILE "${CMAKE_SOURCE_DIR}/release/resources/icons/gnuradio_logo_icon-square.ico")
+    set(MACOSX_BUNDLE_ICON_FILE "gnuradio-companion.icns")
     if(NOT CMAKE_INSTALL_NAME_DIR AND NOT GR_BUILD_INSTALLER)
         set(CMAKE_INSTALL_NAME_DIR
             ${CMAKE_INSTALL_PREFIX}/${GR_LIBRARY_DIR}
