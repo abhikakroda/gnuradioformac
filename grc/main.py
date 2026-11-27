@@ -117,9 +117,13 @@ def run_qt(args, log):
 
     ''' Translation Support '''
     # Try to get the current locale. Always add English
-    lc, encoding = locale.getdefaultlocale()
-    if lc:
-        languages = [lc]
+    # The C/POSIX locale (what Finder-launched apps get) ends gettext's search
+    # list, so it must not be part of it.
+    try:
+        lc = locale.getlocale()[0]
+    except ValueError:
+        lc = None
+    languages = [lc] if lc and lc not in ("C", "POSIX") else []
     languages += settings.DEFAULT_LANGUAGE
     log.debug("Using locale - %s" % str(languages))
 
@@ -182,6 +186,11 @@ def run_qt(args, log):
     # Launch GRC
     app = grc.Application(settings, model, args.flow_graphs)
     sys.exit(app.run())
+
+
+def _have_pyqt6():
+    import importlib.util
+    return importlib.util.find_spec('PyQt6.QtWidgets') is not None
 
 
 def main():
@@ -248,6 +257,10 @@ def main():
         run_gtk(args, log)
     else:  # args.framework == None
         if grc_version_from_config == 'grc_qt':
+            run_qt(args, log)
+        elif sys.platform == 'darwin' and grc_version_from_config != 'grc_gtk' and _have_pyqt6():
+            # The Qt front end follows the macOS look and feel (native menu
+            # bar, Dark Mode, Retina); GTK on macOS does not.
             run_qt(args, log)
         else:
             run_gtk(args, log)

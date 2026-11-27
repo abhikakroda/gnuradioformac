@@ -75,16 +75,47 @@ def set_dock_icon(icon_path):
 
 
 def set_process_name(name):
-    """Set the name AppKit shows for the process (application menu, Dock)."""
+    """Set the name AppKit shows for the process (application menu, Dock).
+
+    The menu bar title of a process that was exec'd from a bundle launcher comes
+    from the main bundle's CFBundleName, which is the Python interpreter's
+    unless it is overridden here, before the first NSApplication is created.
+    """
     if sys.platform != "darwin" or not name:
         return False
     try:
         lib = _objc()
         info = _send(lib, lib.objc_getClass(b"NSProcessInfo"), b"processInfo")
         _send(lib, info, b"setProcessName:", _nsstring(lib, name))
+        bundle = _send(lib, lib.objc_getClass(b"NSBundle"), b"mainBundle")
+        bundle_info = _send(lib, bundle, b"infoDictionary")
+        if bundle_info:
+            for key in ("CFBundleName", "CFBundleDisplayName"):
+                _send(lib, bundle_info, b"setObject:forKey:",
+                      _nsstring(lib, name), _nsstring(lib, key))
         return True
     except Exception as err:
         log.debug("Could not set the process name: %s", err)
+        return False
+
+
+def activate_application():
+    """Bring the application to the front.
+
+    A process started through the bundle launcher is not activated by
+    LaunchServices once it has been exec'd into the interpreter, so its first
+    window would otherwise open behind the application that was in front.
+    """
+    if sys.platform != "darwin":
+        return False
+    try:
+        lib = _objc()
+        app = _send(lib, lib.objc_getClass(b"NSApplication"), b"sharedApplication")
+        _send(lib, app, b"setActivationPolicy:", 0)  # NSApplicationActivationPolicyRegular
+        _send(lib, app, b"activateIgnoringOtherApps:", 1)
+        return True
+    except Exception as err:
+        log.debug("Could not activate the application: %s", err)
         return False
 
 

@@ -21,8 +21,9 @@ from __future__ import absolute_import, print_function
 import logging
 import textwrap
 import os
+import sys
 
-from PyQt6.QtCore import QSettings, Qt, QT_VERSION_STR, PYQT_VERSION_STR
+from PyQt6.QtCore import QEvent, QSettings, Qt, QT_VERSION_STR, PYQT_VERSION_STR
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
@@ -34,6 +35,8 @@ from .helpers.profiling import StopWatch
 # Logging
 # Setup the logger to use a different name than the file name
 log = logging.getLogger("grc.application")
+
+APP_DISPLAY_NAME = "GNU Radio Companion"
 
 
 class Application(QApplication):
@@ -55,11 +58,23 @@ class Application(QApplication):
 
         log.debug("Creating QApplication instance")
         QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
+        self.is_macos = sys.platform == "darwin"
+        if self.is_macos:
+            macos.set_process_name(APP_DISPLAY_NAME)
         QApplication.__init__(self, settings.argv)
+        QApplication.setApplicationName(APP_DISPLAY_NAME)
+        QApplication.setApplicationDisplayName(APP_DISPLAY_NAME)
+        QApplication.setOrganizationDomain("gnuradio.org")
         macos.setup_application_identity(settings.path.ICON)
 
         self.theme = "light"
-        if self.qsettings.value("appearance/theme", "dark") == "dark":
+        if self.is_macos:
+            # Native look: the macOS widget style and system palette follow the
+            # Light/Dark appearance chosen in System Settings.
+            self.setStyle("macos")
+            self.theme = self.system_theme()
+            self.styleHints().colorSchemeChanged.connect(self.system_theme_changed)
+        elif self.qsettings.value("appearance/theme", "dark") == "dark":
             try:
                 import qdarkstyle
 
@@ -135,8 +150,37 @@ class Application(QApplication):
 
         log.debug(f'devicePixelRatio {self.MainWindow.screen().devicePixelRatio()}')
 
-        if (self.qsettings.value("appearance/theme", "dark") == "dark") and (self.theme == "light"):
+        if (not self.is_macos) and (self.qsettings.value("appearance/theme", "dark") == "dark") and (self.theme == "light"):
             log.warning("Could not apply dark theme. Is QDarkStyle installed?")
+
+    def system_theme(self):
+        """"dark" or "light", following the macOS appearance"""
+        if self.styleHints().colorScheme() == Qt.ColorScheme.Dark:
+            return "dark"
+        return "light"
+
+    def system_theme_changed(self, *_):
+        self.theme = self.system_theme()
+        log.debug("System appearance changed to %s", self.theme)
+        tabs = self.MainWindow.tabWidget
+        for index in range(tabs.count()):
+            tabs.widget(index).apply_theme()
+
+    def event(self, event):
+        # Finder (double-click / "Open With" / drop on the Dock icon) and
+        # `open file.grc` deliver files as FileOpen events, not as arguments.
+        if event.type() == QEvent.Type.FileOpen and event.file():
+            tabs = self.MainWindow.tabWidget
+            scene = self.MainWindow.currentFlowgraphScene
+            replace_blank = (tabs.count() == 1 and not scene.filename
+                             and not scene.undoStack.canUndo())
+            self.MainWindow.open_triggered(event.file())
+            if replace_blank and tabs.count() == 2:
+                tabs.removeTab(0)
+            self.MainWindow.raise_()
+            self.MainWindow.activateWindow()
+            return True
+        return super().event(event)
 
     # Global registration functions
     #  - Handles the majority of child controller interaciton
@@ -174,4 +218,8 @@ class Application(QApplication):
         """Launches the main QT event loop"""
         # Show the main window after everything is initialized.
         self.MainWindow.show()
+        self.MainWindow.raise_()
+        self.MainWindow.activateWindow()
+        if self.is_macos:
+            macos.activate_application()
         return self.exec()

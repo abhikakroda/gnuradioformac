@@ -24,11 +24,30 @@
     <string>@GR_MACOS_APP_VERSION@</string>
     <key>CFBundleVersion</key>
     <string>@GR_MACOS_APP_BUILD_VERSION@</string>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>GNU Radio Companion Flow Graph</string>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>grc</string>
+            </array>
+            <key>CFBundleTypeIconFile</key>
+            <string>@GR_MACOS_APP_ICON_NAME@</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Owner</string>
+        </dict>
+    </array>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.developer-tools</string>
     <key>LSMinimumSystemVersion</key>
     <string>@GR_MACOS_APP_MIN_SYSTEM_VERSION@</string>
     <key>LSUIElement</key>
+    <false/>
+    <key>NSSupportsSuddenTermination</key>
     <false/>
     <key>NSHighResolutionCapable</key>
     <true/>

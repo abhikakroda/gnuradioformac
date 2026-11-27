@@ -63,7 +63,17 @@ log = logging.getLogger(f"grc.application.{__name__}")
 Action = QAction
 Menu = QMenu
 Toolbar = QToolBar
-Icons = QIcon.fromTheme
+
+
+def Icons(name):
+    """Theme icon; on macOS Qt resolves these to SF Symbols, with a symbol for those it has no mapping for."""
+    icon = QIcon.fromTheme(name)
+    if icon.isNull() and name in MACOS_FALLBACK_ICONS:
+        icon = QIcon.fromTheme(MACOS_FALLBACK_ICONS[name])
+    return icon
+
+
+MACOS_FALLBACK_ICONS = {"system-run": "hammer"}
 Keys = QKeySequence.StandardKey
 QStyle = QStyle
 
@@ -75,7 +85,8 @@ class MainWindow(QMainWindow, base.Component):
 
         log.debug("Setting the main window")
         self.setObjectName("main")
-        self.setWindowTitle(_("window-title"))
+        title = _("window-title")
+        self.setWindowTitle(title if title != "window-title" else "GNU Radio Companion")
         self.setDockOptions(
             QMainWindow.DockOption.AllowNestedDocks |
             QMainWindow.DockOption.AllowTabbedDocks |
@@ -94,7 +105,12 @@ class MainWindow(QMainWindow, base.Component):
         log.debug(
             "Setting window size - ({}, {})".format(monitor.width(), monitor.height())
         )
-        self.resize(int(monitor.width() * 0.50), monitor.height())
+        if sys.platform == "darwin":
+            self.resize(int(monitor.width() * 0.85), int(monitor.height() * 0.9))
+            self.move(monitor.x() + (monitor.width() - self.width()) // 2,
+                      monitor.y() + (monitor.height() - self.height()) // 2)
+        else:
+            self.resize(int(monitor.width() * 0.50), monitor.height())
 
         self.setCorner(Qt.Corner.BottomLeftCorner, Qt.DockWidgetArea.LeftDockWidgetArea)
 
@@ -209,6 +225,9 @@ class MainWindow(QMainWindow, base.Component):
         ExampleFinder.signals.progress.connect(self.update_progress_bar)
         self.threadpool.start(ExampleFinder)
 
+        if sys.platform == "darwin":
+            self.apply_macos_native_chrome()
+
     """def show(self):
         log.debug("Showing main window")
         self.show()
@@ -281,6 +300,53 @@ class MainWindow(QMainWindow, base.Component):
         self.currentFlowgraphScene.undoStack.push(action)
         self.updateActions()
         self.currentFlowgraphScene.update()
+
+    def apply_macos_native_chrome(self):
+        """Make the main window and menus behave like a regular macOS document app."""
+        actions = self.actions
+        actions["preferences"].setMenuRole(QAction.MenuRole.PreferencesRole)
+        actions["exit"].setMenuRole(QAction.MenuRole.QuitRole)
+        actions["about"].setMenuRole(QAction.MenuRole.AboutRole)
+        actions["about_qt"].setMenuRole(QAction.MenuRole.AboutQtRole)
+
+        # Mac keyboards have a Delete key that sends Backspace, and function
+        # keys that are taken by the system unless Fn is held.
+        actions["delete"].setShortcuts([Keys.Delete, QKeySequence(Qt.Key.Key_Backspace)])
+        actions["generate"].setShortcuts([QKeySequence("F5"), QKeySequence("Ctrl+B")])
+        actions["execute"].setShortcuts([QKeySequence("F6"), QKeySequence("Ctrl+R")])
+        actions["kill"].setShortcuts([QKeySequence("F7"), QKeySequence("Ctrl+.")])
+
+        # One unified title bar + toolbar, no toolbar dragging, icon-only buttons.
+        self.setUnifiedTitleAndToolBarOnMac(True)
+        for toolbar in self.toolbars.values():
+            toolbar.setMovable(False)
+            toolbar.setFloatable(False)
+            toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.tabWidget.setDocumentMode(True)
+        self.setDocumentMode(True)
+
+        window = QMenu("&Window", self)
+        minimize = QAction("Minimize", self)
+        minimize.setShortcut(QKeySequence("Ctrl+M"))
+        minimize.triggered.connect(self.showMinimized)
+        zoom = QAction("Zoom", self)
+        zoom.triggered.connect(
+            lambda: self.showNormal() if self.isMaximized() else self.showMaximized())
+        window.addAction(minimize)
+        window.addAction(zoom)
+        window.addSeparator()
+        self.menus["window"] = window
+        self.menuBar().insertMenu(self.menus["help"].menuAction(), window)
+
+    def update_window_document(self):
+        """Show the open flowgraph's file, proxy icon and edited dot in the title bar."""
+        if sys.platform != "darwin" or self.tabWidget.count() == 0:
+            return
+        scene = self.currentFlowgraphScene
+        filename = scene.filename or ""
+        self.setWindowFilePath(filename)
+        self.setWindowTitle(f"{os.path.basename(filename) or 'Untitled'}[*]")
+        self.setWindowModified(not scene.saved)
 
     def createActions(self, actions):
         """
@@ -655,7 +721,8 @@ class MainWindow(QMainWindow, base.Component):
         valid_fg = self.currentFlowgraph.is_valid()
         saved_fg = self.currentFlowgraphScene.saved
 
-        self.actions["save"].setEnabled(not saved_fg)
+        self.actions["save"].setEnabled(not saved_fg or not self.currentFlowgraphScene.filename)
+        self.update_window_document()
 
         self.actions["undo"].setEnabled(canUndo)
         self.actions["redo"].setEnabled(canRedo)
@@ -994,7 +1061,7 @@ class MainWindow(QMainWindow, base.Component):
         fg_view.centerOn(0, 0)
         initial_state = self.platform.parse_flow_graph("")
         fg_view.scene().import_data(initial_state)
-        fg_view.scene().saved = False
+        fg_view.scene().saved = sys.platform == "darwin"  # pristine documents close without a prompt
         self.connect_fg_signals(fg_view.scene())
         log.debug("Adding flowgraph view")
         self.tabWidget.addTab(fg_view, "Untitled")
@@ -1442,9 +1509,10 @@ class MainWindow(QMainWindow, base.Component):
 
     def generate_triggered(self, called_from_exec=False):
         log.debug("generate")
-        if not self.currentFlowgraphScene.saved:
+        scene = self.currentFlowgraphScene
+        if not scene.saved or not scene.filename:
             self.save_triggered()
-        if not self.currentFlowgraphScene.saved:  # The line above was cancelled
+        if not scene.saved or not scene.filename:  # The line above was cancelled
             log.error("Cannot generate a flowgraph without saving first")
             return
 

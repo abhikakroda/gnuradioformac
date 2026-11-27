@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 
 from ast import literal_eval
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QBrush, QAction
+from PyQt6.QtGui import QBrush, QAction, QPainter
 from PyQt6.QtWidgets import QGraphicsView, QMenu
 
 # Custom modules
@@ -33,6 +33,9 @@ class FlowgraphView(
         super(FlowgraphView, self).__init__()
         self.setParent(parent)
         self.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self.setRenderHints(QPainter.RenderHint.Antialiasing
+                            | QPainter.RenderHint.TextAntialiasing
+                            | QPainter.RenderHint.SmoothPixmapTransform)
 
         self.setScene(FlowgraphScene(self, platform))
 
@@ -46,10 +49,7 @@ class FlowgraphView(
             self.initEmpty()
 
         self.fitInView(self.scene().sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
-        if self.app.theme == "dark":
-            self.setBackgroundBrush(QBrush(DARK_FLOWGRAPH_BACKGROUND_COLOR))
-        else:
-            self.setBackgroundBrush(QBrush(LIGHT_FLOWGRAPH_BACKGROUND_COLOR))
+        self.apply_theme()
 
         self.isPanning = False
         self.mousePressed = False
@@ -58,6 +58,13 @@ class FlowgraphView(
 
         self.generator = None
         self.process = None
+
+    def apply_theme(self):
+        if self.app.theme == "dark":
+            self.setBackgroundBrush(QBrush(DARK_FLOWGRAPH_BACKGROUND_COLOR))
+        else:
+            self.setBackgroundBrush(QBrush(LIGHT_FLOWGRAPH_BACKGROUND_COLOR))
+        self.viewport().update()
 
     def createActions(self, actions):
         log.debug("Creating actions")

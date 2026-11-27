@@ -22,6 +22,7 @@ if(NOT APPLE)
 endif()
 
 option(ENABLE_MACOS_APP_BUNDLE "Install GNU Radio Companion as a macOS .app bundle" ON)
+option(GR_MACOS_NATIVE_LAUNCHER "Build the .app launcher as a native executable embedding Python" ON)
 
 function(gr_install_macos_app_bundle)
     set(options)
@@ -69,12 +70,60 @@ function(gr_install_macos_app_bundle)
     file(MAKE_DIRECTORY "${staging}")
 
     configure_file("${resource_dir}/Info.plist.in" "${staging}/Info.plist" @ONLY)
-    configure_file("${resource_dir}/launcher.sh.in" "${staging}/${GR_MACOS_APP_EXECUTABLE}" @ONLY)
     file(WRITE "${staging}/PkgInfo" "APPL????")
+
+    # Preferred executable: a small native launcher that embeds Python, so the
+    # running process *is* the bundle (Dock icon/name, Keep in Dock, document
+    # events).  It needs the interpreter's headers and shared library; without
+    # them the shell-script launcher, which execs python, is used.
+    set(native_launcher FALSE)
+    if(GR_MACOS_NATIVE_LAUNCHER AND PYTHON_EXECUTABLE)
+        execute_process(
+            COMMAND "${PYTHON_EXECUTABLE}" -c
+                "import sysconfig as s; print(';'.join([s.get_config_var('INCLUDEPY') or '', s.get_config_var('LIBDIR') or '', s.get_config_var('LDVERSION') or '']))"
+            OUTPUT_VARIABLE py_build_info
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE py_build_info_result
+            ERROR_QUIET)
+        if(py_build_info_result EQUAL 0)
+            list(GET py_build_info 0 py_include_dir)
+            list(GET py_build_info 1 py_lib_dir)
+            list(GET py_build_info 2 py_ldversion)
+            if(EXISTS "${py_include_dir}/Python.h" AND EXISTS "${py_lib_dir}/libpython${py_ldversion}.dylib")
+                set(native_launcher TRUE)
+            endif()
+        endif()
+    endif()
 
     set(contents "${GR_MACOS_APP_DESTINATION}/${APP_NAME}.app/Contents")
     install(FILES "${staging}/Info.plist" "${staging}/PkgInfo" DESTINATION "${contents}")
-    install(PROGRAMS "${staging}/${GR_MACOS_APP_EXECUTABLE}" DESTINATION "${contents}/MacOS")
+    if(native_launcher)
+        set(GR_MACOS_APP_PYTHON "${PYTHON_EXECUTABLE}")
+        configure_file("${resource_dir}/launcher.cpp.in" "${staging}/launcher.cpp" @ONLY)
+        set(launcher_target gr_macos_app_launcher)
+        add_executable(${launcher_target} "${staging}/launcher.cpp")
+        target_include_directories(${launcher_target} PRIVATE "${py_include_dir}")
+        target_link_directories(${launcher_target} PRIVATE "${py_lib_dir}")
+        target_link_libraries(${launcher_target} PRIVATE "python${py_ldversion}")
+        # Shared libraries that Python modules dlopen by bare name (GLib for
+        # PyGObject, Qt, ...) are found through the executable's rpaths, so
+        # list the usual Homebrew/MacPorts locations and the install tree.
+        set(launcher_rpath
+            "${py_lib_dir}" "${CMAKE_INSTALL_PREFIX}/lib"
+            "@executable_path/../../../../lib" "@executable_path/../../../lib"
+            "/opt/homebrew/lib" "/usr/local/lib" "/opt/local/lib")
+        set_target_properties(${launcher_target} PROPERTIES
+            CXX_STANDARD 17
+            BUILD_RPATH "${launcher_rpath}"
+            INSTALL_RPATH "${launcher_rpath}"
+            OUTPUT_NAME "${GR_MACOS_APP_EXECUTABLE}")
+        install(TARGETS ${launcher_target} RUNTIME DESTINATION "${contents}/MacOS")
+        message(STATUS "Using the native Python launcher for ${APP_NAME}.app")
+    else()
+        configure_file("${resource_dir}/launcher.sh.in" "${staging}/${GR_MACOS_APP_EXECUTABLE}" @ONLY)
+        install(PROGRAMS "${staging}/${GR_MACOS_APP_EXECUTABLE}" DESTINATION "${contents}/MacOS")
+        message(STATUS "Using the shell launcher for ${APP_NAME}.app")
+    endif()
     install(FILES "${APP_ICON}" DESTINATION "${contents}/Resources")
 
     message(STATUS "Creating install rules for ${APP_NAME}.app in ${GR_MACOS_APP_DESTINATION}")

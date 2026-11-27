@@ -55,3 +55,28 @@ def test_info_plist_template_declares_dock_app_and_icon():
     assert info["LSUIElement"] is False
     for key in ("CFBundleName", "CFBundleExecutable", "CFBundleIdentifier"):
         assert info[key]
+
+
+def test_info_plist_template_associates_grc_documents():
+    text = open(PLIST_TEMPLATE, encoding="utf-8").read()
+    values = {name: "x" for name in set(re.findall(r"@(\w+)@", text))}
+    values["GR_MACOS_APP_ICON_NAME"] = "gnuradio-companion"
+    for name, value in values.items():
+        text = text.replace("@%s@" % name, value)
+    info = plistlib.loads(text.encode("utf-8"))
+    doc_types = info["CFBundleDocumentTypes"]
+    assert any("grc" in doc["CFBundleTypeExtensions"] for doc in doc_types)
+    assert all(doc["CFBundleTypeRole"] == "Editor" for doc in doc_types)
+
+
+def test_launcher_templates_exist_and_keep_bundle_identity():
+    resources = os.path.dirname(PLIST_TEMPLATE)
+    native = open(os.path.join(resources, "launcher.cpp.in"), encoding="utf-8").read()
+    assert "Py_InitializeFromConfig" in native
+    assert "parse_argv = 0" in native
+    assert os.path.isfile(os.path.join(resources, "launcher.sh.in"))
+
+
+def test_activate_application_does_nothing_off_macos(monkeypatch):
+    monkeypatch.setattr(macos.sys, "platform", "linux")
+    assert macos.activate_application() is False

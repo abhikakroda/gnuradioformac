@@ -48,16 +48,33 @@ fi
 
 PROGRAM="$PREFIX/@GR_RUNTIME_DIR@/@GR_MACOS_APP_PROGRAM@"
 
-# Prefer the Python shipped with the installer, otherwise the one on PATH.
+# Applications started from Finder/Dock get a minimal PATH (/usr/bin:/bin:...),
+# which would pick Apple's python3 instead of the one GNU Radio was built for.
+export PATH="$PREFIX/@GR_RUNTIME_DIR@:/opt/homebrew/bin:/usr/local/bin:/opt/local/bin:$PATH"
+
+# Python: the one shipped with the installer, else the interpreter named in
+# the program's shebang (Homebrew/conda/venv installs), else python3 on PATH.
+PYTHON=""
 if [ -x "$PREFIX/@GR_RUNTIME_DIR@/python.exe" ]; then
     PYTHON="$PREFIX/@GR_RUNTIME_DIR@/python.exe"
 else
-    PYTHON="$(command -v python3)"
+    IFS= read -r SHEBANG < "$PROGRAM"
+    case "$SHEBANG" in
+        "#!"*)
+            read -r -a SHEBANG_WORDS <<< "${SHEBANG#"#!"}"
+            CANDIDATE="${SHEBANG_WORDS[0]}"
+            [ "$(basename "$CANDIDATE")" = "env" ] && CANDIDATE="${SHEBANG_WORDS[1]}"
+            [ -x "$CANDIDATE" ] && PYTHON="$CANDIDATE"
+            ;;
+    esac
+    [ -n "$PYTHON" ] || PYTHON="$(command -v python3)"
 fi
 [ -n "$PYTHON" ] || fail "Python 3 was not found."
 
 export PYTHONPATH="$PREFIX/@GR_PYTHON_DIR@${PYTHONPATH:+:$PYTHONPATH}"
-export PATH="$PREFIX/@GR_RUNTIME_DIR@:$PATH"
+
+# Finder starts applications without a locale; Python and Qt then fall back to "C".
+export LANG="${LANG:-en_US.UTF-8}"
 
 # Used by grc.core.utils.macos to give the running process its Dock icon
 # and name when the interpreter is not itself the bundle executable.
