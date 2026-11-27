@@ -178,6 +178,7 @@ int main(int argc, char** argv)
            (contents_dir + "/Resources/" + ICON_NAME + ".icns").c_str(),
            1);
     setenv("GRC_MACOS_APP_NAME", APP_NAME, 1);
+    setenv("PYTHONDONTWRITEBYTECODE", "1", 1);
 
     // Finder/LaunchServices may add a process serial number argument.
     std::vector<std::string> args = { program };
@@ -192,6 +193,8 @@ int main(int argc, char** argv)
     PyConfig_InitPythonConfig(&config);
     // Everything after the program is for GNU Radio, not for the interpreter.
     config.parse_argv = 0;
+    // Keep the signed .app bundle read-only: never write __pycache__ inside it.
+    config.write_bytecode = 0;
     PyStatus status = PyConfig_SetBytesString(&config, &config.program_name, python.c_str());
     if (!PyStatus_Exception(status))
         status = PyConfig_SetBytesString(&config, &config.executable, python.c_str());

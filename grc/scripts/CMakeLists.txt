@@ -37,6 +37,7 @@ elseif(APPLE)
             IDENTIFIER "org.gnuradio.grc"
             PROGRAM gnuradio-companion
             ICON "${CMAKE_SOURCE_DIR}/release/resources/icons/gnuradio-companion.icns"
+            DOCUMENT_ICON "${CMAKE_SOURCE_DIR}/release/resources/icons/gnuradio-companion-document.icns"
         )
     endif()
 endif()

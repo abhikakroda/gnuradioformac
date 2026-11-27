@@ -187,6 +187,9 @@ class Application(QApplication):
         tabs = self.MainWindow.tabWidget
         for index in range(tabs.count()):
             tabs.widget(index).apply_theme()
+        if hasattr(self, "VariableEditor") and self.VariableEditor.scene is not None:
+            self.VariableEditor._rebuild()
+            self.VariableEditor._tree.expandAll()
 
     def event(self, event):
         # Finder (double-click / "Open With" / drop on the Dock icon) and
@@ -239,6 +242,9 @@ class Application(QApplication):
     def run(self):
         """Launches the main QT event loop"""
         # Show the main window after everything is initialized.
+        if self.is_macos:
+            self.MainWindow.restore_macos_layout()
+            self.MainWindow.setup_sidebar_vibrancy()
         self.MainWindow.show()
         self.MainWindow.raise_()
         self.MainWindow.activateWindow()

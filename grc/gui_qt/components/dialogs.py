@@ -2,6 +2,7 @@ from __future__ import absolute_import, print_function
 
 from copy import copy
 
+from . import native_ui
 from ..Constants import MIN_DIALOG_HEIGHT, DEFAULT_PARAM_TAB
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QStandardItem, QStandardItemModel
@@ -178,10 +179,9 @@ class PropsDialog(QDialog):
 
                     def open_chooser(widget=None):
                         self._block.parent_flowgraph.gui.remove_external_editor(param=ext_param)
-                        editor, filtr = QFileDialog.getOpenFileName(
-                            self,
-                        )
-                        self.qsettings.setValue("grc/editor", editor)
+                        editor = native_ui.open_file(self, "Choose Editor")
+                        if editor:
+                            self.qsettings.setValue("grc/editor", editor)
                     editor_widget = QWidget()
                     editor_widget.setLayout(QHBoxLayout())
                     open_editor_button = QPushButton("Open in Editor")
@@ -253,14 +253,16 @@ class PropsDialog(QDialog):
         return layout.itemAtPosition(location[0], 1).widget()
 
     def open_filero(self):
-        f_name, fltr = QFileDialog.getOpenFileName(self, "Open a Data File")
+        f_name = native_ui.open_file(self, "Open a Data File")
         button = self.sender()
-        self.find_param_widget(button).setText(f_name)
+        if f_name:
+            self.find_param_widget(button).setText(f_name)
 
     def open_filerw(self):
-        f_name, fltr = QFileDialog.getSaveFileName(self, "Save a Data File")
+        f_name = native_ui.save_file(self, "Save a Data File")
         button = self.sender()
-        self.find_param_widget(button).setText(f_name)
+        if f_name:
+            self.find_param_widget(button).setText(f_name)
 
     def accept(self):
         super().accept()

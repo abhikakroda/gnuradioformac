@@ -11,6 +11,7 @@
 #   <NAME>.app/Contents/PkgInfo
 #   <NAME>.app/Contents/MacOS/<EXECUTABLE>      native launcher (embeds Python)
 #   <NAME>.app/Contents/Resources/<ICON>.icns   Dock / Finder icon
+#   <NAME>.app/Contents/Resources/<DOCUMENT_ICON>.icns   icon of the .grc documents
 #   <NAME>.app/Contents/Resources/grc-runtime/  GRC, blocks, PyQt6 and Qt
 #                                               (GR_MACOS_BUNDLE_RUNTIME), then
 #                                               the bundle is ad-hoc signed
@@ -35,7 +36,7 @@ set(GR_MACOS_APP_EXTRA_BLOCKS_DIRS "" CACHE STRING
 
 function(gr_install_macos_app_bundle)
     set(options)
-    set(one_value_args NAME IDENTIFIER PROGRAM ICON)
+    set(one_value_args NAME IDENTIFIER PROGRAM ICON DOCUMENT_ICON)
     cmake_parse_arguments(APP "${options}" "${one_value_args}" "" ${ARGN})
 
     foreach(required NAME IDENTIFIER PROGRAM ICON)
@@ -56,6 +57,15 @@ function(gr_install_macos_app_bundle)
     endif()
 
     get_filename_component(icon_name "${APP_ICON}" NAME_WE)
+    if(APP_DOCUMENT_ICON)
+        if(NOT EXISTS "${APP_DOCUMENT_ICON}")
+            message(FATAL_ERROR "gr_install_macos_app_bundle: document icon ${APP_DOCUMENT_ICON} not found")
+        endif()
+        get_filename_component(document_icon_name "${APP_DOCUMENT_ICON}" NAME_WE)
+    else()
+        set(document_icon_name "${icon_name}")
+    endif()
+    set(GR_MACOS_APP_DOCUMENT_ICON_NAME "${document_icon_name}")
 
     set(GR_MACOS_APP_NAME "${APP_NAME}")
     set(GR_MACOS_APP_IDENTIFIER "${APP_IDENTIFIER}")
@@ -134,6 +144,9 @@ function(gr_install_macos_app_bundle)
         message(STATUS "Using the shell launcher for ${APP_NAME}.app")
     endif()
     install(FILES "${APP_ICON}" DESTINATION "${contents}/Resources")
+    if(APP_DOCUMENT_ICON)
+        install(FILES "${APP_DOCUMENT_ICON}" DESTINATION "${contents}/Resources")
+    endif()
 
     if(GR_MACOS_BUNDLE_RUNTIME AND PYTHON_EXECUTABLE)
         set(GR_MACOS_EMBED_SCRIPT "${resource_dir}/embed_runtime.py")

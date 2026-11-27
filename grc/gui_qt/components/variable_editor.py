@@ -5,7 +5,8 @@ import logging
 from enum import Enum
 
 from PyQt6.QtGui import QIcon, QAction, QPalette
-from PyQt6.QtWidgets import QMenu, QDockWidget, QTreeWidget, QTreeWidgetItem
+import sys
+from PyQt6.QtWidgets import QFrame, QMenu, QDockWidget, QTreeWidget, QTreeWidgetItem
 from PyQt6.QtCore import pyqtSlot, pyqtSignal, QPointF, Qt, QVariant
 
 # Custom modules
@@ -47,6 +48,8 @@ class VariableEditor(QDockWidget, base.Component):
         self._tree = QTreeWidget()
         self._model = self._tree.model()
         self._tree.setObjectName('variable_editor::tree_widget')
+        if sys.platform == "darwin":
+            self._tree.setFrameShape(QFrame.Shape.NoFrame)
         self._tree.setHeaderLabels(["ID", "Value", ""])
         self.setWidget(self._tree)
         self.currently_rebuilding = True

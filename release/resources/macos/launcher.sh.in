@@ -90,6 +90,7 @@ export LANG="${LANG:-en_US.UTF-8}"
 # and name when the interpreter is not itself the bundle executable.
 export GRC_MACOS_APP_ICON="$CONTENTS_DIR/Resources/@GR_MACOS_APP_ICON_NAME@.icns"
 export GRC_MACOS_APP_NAME="@GR_MACOS_APP_NAME@"
+export PYTHONDONTWRITEBYTECODE=1
 
 # Finder/LaunchServices may add a process serial number argument.
 ARGS=()

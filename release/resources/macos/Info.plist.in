@@ -33,12 +33,39 @@
             <array>
                 <string>grc</string>
             </array>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>@GR_MACOS_APP_IDENTIFIER@.flowgraph</string>
+            </array>
             <key>CFBundleTypeIconFile</key>
-            <string>@GR_MACOS_APP_ICON_NAME@</string>
+            <string>@GR_MACOS_APP_DOCUMENT_ICON_NAME@</string>
             <key>CFBundleTypeRole</key>
             <string>Editor</string>
             <key>LSHandlerRank</key>
             <string>Owner</string>
+        </dict>
+    </array>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>@GR_MACOS_APP_IDENTIFIER@.flowgraph</string>
+            <key>UTTypeDescription</key>
+            <string>GNU Radio Companion Flow Graph</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.xml</string>
+                <string>public.data</string>
+            </array>
+            <key>UTTypeIconFile</key>
+            <string>@GR_MACOS_APP_DOCUMENT_ICON_NAME@</string>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>grc</string>
+                </array>
+            </dict>
         </dict>
     </array>
     <key>LSApplicationCategoryType</key>

@@ -18,11 +18,12 @@
 
 # Standard modules
 import logging
+import sys
 
 from PyQt6.QtCore import QUrl, Qt, QVariant
 from PyQt6.QtWidgets import (QLineEdit, QTreeView, QMenu, QDockWidget, QWidget,
-                             QVBoxLayout, QAbstractItemView, QCompleter, QToolButton)
-from PyQt6.QtGui import QStandardItem, QStandardItemModel, QAction
+                             QVBoxLayout, QAbstractItemView, QCompleter, QFrame, QToolButton)
+from PyQt6.QtGui import QIcon, QStandardItem, QStandardItemModel, QAction
 
 # Custom modules
 from .. import base
@@ -38,6 +39,16 @@ class BlockSearchBar(QLineEdit):
         QLineEdit.setClearButtonEnabled(self, True)
         self.parent = parent
         self.setObjectName("block_library::search_bar")
+        if sys.platform == "darwin":
+            icon = QIcon.fromTheme("edit-find")
+            if icon.isNull():
+                icon = QIcon.fromTheme("magnifyingglass")
+            if not icon.isNull():
+                self.addAction(icon, QLineEdit.ActionPosition.LeadingPosition)
+            self.setStyleSheet(
+                "QLineEdit { border-radius: 11px; padding: 3px 8px; "
+                "border: 1px solid palette(mid); background: palette(base); }"
+            )
         # We must use a queued connection here, otherwise
         # the searchbar entry will not be deleted if we selected an item from
         # the popup window by key_down and key_enter
@@ -149,6 +160,8 @@ class BlockLibrary(QDockWidget, base.Component):
 
         library = LibraryView(container)
         library.setObjectName("block_library::library")
+        if sys.platform == "darwin":
+            library.setFrameShape(QFrame.Shape.NoFrame)
         library.setModel(self._model)
         library.setDragEnabled(True)
         library.setDragDropMode(QAbstractItemView.DragDropMode.DragOnly)

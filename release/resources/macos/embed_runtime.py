@@ -23,6 +23,7 @@ still taken from the GNU Radio installation that the program's "#!" line
 """
 
 import argparse
+import compileall
 import os
 import re
 import shutil
