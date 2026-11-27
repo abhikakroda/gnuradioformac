@@ -75,7 +75,7 @@ class GUIBlock(QGraphicsItem):
         super(GUIBlock, self).__init__()
         self.core = core
         self.parent = parent
-        self.font = QFont("Helvetica", 10)
+        self.font = Utils.canvas_font(10)
         self.markup_item = QGraphicsTextItem(self)
 
         self.create_shapes_and_labels()

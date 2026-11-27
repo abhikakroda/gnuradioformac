@@ -30,7 +30,8 @@ const char* const PROGRAM = "@GR_RUNTIME_DIR@/@GR_MACOS_APP_PROGRAM@";
 const char* const RUNTIME_DIR = "@GR_RUNTIME_DIR@";
 const char* const PYTHON_DIR = "@GR_PYTHON_DIR@";
 const char* const ICON_NAME = "@GR_MACOS_APP_ICON_NAME@";
-const char* const DEFAULT_PREFIX = "@CMAKE_INSTALL_PREFIX@";
+const char* const PROGRAM_NAME = "@GR_MACOS_APP_PROGRAM@";
+const char* const EMBEDDED_RUNTIME = "Resources/grc-runtime";
 const char* const BUILD_PYTHON = "@GR_MACOS_APP_PYTHON@";
 
 bool exists(const std::string& path)
@@ -123,39 +124,54 @@ int main(int argc, char** argv)
     const std::string contents_dir = dirname_of(dirname_of(exe));
     const std::string app_dir = dirname_of(contents_dir);
 
-    // The bundle lives inside (or next to) the GNU Radio install tree; walk up
-    // until the tree that holds the program is found.
+    // A self-contained bundle carries the GRC program, its Python package, the
+    // block definitions and PyQt6/Qt.  Otherwise the bundle lives inside (or
+    // next to) a GNU Radio install tree: walk up until the tree that holds the
+    // program is found.
+    const std::string runtime = contents_dir + "/" + EMBEDDED_RUNTIME;
+    const std::string embedded_program = runtime + "/bin/" + PROGRAM_NAME;
+    const bool embedded = exists(embedded_program);
+
     std::string prefix;
-    if (const char* env = getenv("GR_PREFIX"))
-        prefix = env;
-    if (prefix.empty()) {
-        std::string dir = app_dir;
-        while (dir != "/") {
-            dir = dirname_of(dir);
-            if (exists(dir + "/" + PROGRAM)) {
-                prefix = dir;
-                break;
+    std::string program;
+    if (embedded) {
+        program = embedded_program;
+    } else {
+        if (const char* env = getenv("GR_PREFIX"))
+            prefix = env;
+        if (prefix.empty()) {
+            std::string dir = app_dir;
+            while (dir != "/") {
+                dir = dirname_of(dir);
+                if (exists(dir + "/" + PROGRAM)) {
+                    prefix = dir;
+                    break;
+                }
             }
         }
+        if (prefix.empty())
+            fail("Could not find the GNU Radio installation this application belongs to.");
+        program = prefix + "/" + PROGRAM;
     }
-    if (prefix.empty() && exists(std::string(DEFAULT_PREFIX) + "/" + PROGRAM))
-        prefix = DEFAULT_PREFIX;
-    if (prefix.empty())
-        fail("Could not find the GNU Radio installation this application belongs to.");
 
-    const std::string program = prefix + "/" + PROGRAM;
-
-    std::string python = prefix + "/" + RUNTIME_DIR + "/python.exe";
-    if (!executable(python))
+    std::string python = prefix.empty() ? "" : prefix + "/" + RUNTIME_DIR + "/python.exe";
+    if (python.empty() || !executable(python))
         python = shebang_python(program);
     if (python.empty() && executable(BUILD_PYTHON))
         python = BUILD_PYTHON;
     if (python.empty())
         fail("Python 3 was not found.");
 
-    prepend_env("PYTHONPATH", prefix + "/" + PYTHON_DIR);
+    if (embedded) {
+        prepend_env("PYTHONPATH", runtime + "/site-packages");
+        prepend_env("PYTHONPATH", runtime + "/python");
+        setenv("GRC_BLOCKS_DIR", (runtime + "/blocks").c_str(), 0);
+    } else {
+        prepend_env("PYTHONPATH", prefix + "/" + PYTHON_DIR);
+    }
     prepend_env("PATH", "/opt/homebrew/bin:/usr/local/bin:/opt/local/bin");
-    prepend_env("PATH", prefix + "/" + RUNTIME_DIR);
+    if (!prefix.empty())
+        prepend_env("PATH", prefix + "/" + RUNTIME_DIR);
     if (!getenv("LANG"))
         setenv("LANG", "en_US.UTF-8", 1);
     setenv("GRC_MACOS_APP_ICON",

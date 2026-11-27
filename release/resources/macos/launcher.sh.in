@@ -28,34 +28,39 @@ MACOS_DIR="$(cd "$(dirname "$SELF")" && pwd -P)"
 CONTENTS_DIR="$(dirname "$MACOS_DIR")"
 APP_DIR="$(dirname "$CONTENTS_DIR")"
 
-# The bundle lives inside (or next to) the GNU Radio install tree; walk up
-# until the tree that holds bin/@GR_MACOS_APP_PROGRAM@ is found.
-PREFIX="${GR_PREFIX:-}"
-if [ -z "$PREFIX" ]; then
-    DIR="$APP_DIR"
-    while [ "$DIR" != "/" ]; do
-        DIR="$(dirname "$DIR")"
-        if [ -f "$DIR/@GR_RUNTIME_DIR@/@GR_MACOS_APP_PROGRAM@" ]; then
-            PREFIX="$DIR"
-            break
-        fi
-    done
+# A self-contained bundle carries the program, its Python package, the block
+# definitions and PyQt6/Qt in Contents/Resources/grc-runtime.  Otherwise the
+# bundle lives inside (or next to) the GNU Radio install tree; walk up until
+# the tree that holds @GR_RUNTIME_DIR@/@GR_MACOS_APP_PROGRAM@ is found.
+RUNTIME="$CONTENTS_DIR/Resources/grc-runtime"
+PREFIX=""
+if [ -f "$RUNTIME/bin/@GR_MACOS_APP_PROGRAM@" ]; then
+    PROGRAM="$RUNTIME/bin/@GR_MACOS_APP_PROGRAM@"
+else
+    PREFIX="${GR_PREFIX:-}"
+    if [ -z "$PREFIX" ]; then
+        DIR="$APP_DIR"
+        while [ "$DIR" != "/" ]; do
+            DIR="$(dirname "$DIR")"
+            if [ -f "$DIR/@GR_RUNTIME_DIR@/@GR_MACOS_APP_PROGRAM@" ]; then
+                PREFIX="$DIR"
+                break
+            fi
+        done
+    fi
+    [ -n "$PREFIX" ] || fail "Could not find the GNU Radio installation this application belongs to."
+    PROGRAM="$PREFIX/@GR_RUNTIME_DIR@/@GR_MACOS_APP_PROGRAM@"
 fi
-if [ -z "$PREFIX" ] && [ -f "@CMAKE_INSTALL_PREFIX@/@GR_RUNTIME_DIR@/@GR_MACOS_APP_PROGRAM@" ]; then
-    PREFIX="@CMAKE_INSTALL_PREFIX@"
-fi
-[ -n "$PREFIX" ] || fail "Could not find the GNU Radio installation this application belongs to."
-
-PROGRAM="$PREFIX/@GR_RUNTIME_DIR@/@GR_MACOS_APP_PROGRAM@"
 
 # Applications started from Finder/Dock get a minimal PATH (/usr/bin:/bin:...),
 # which would pick Apple's python3 instead of the one GNU Radio was built for.
-export PATH="$PREFIX/@GR_RUNTIME_DIR@:/opt/homebrew/bin:/usr/local/bin:/opt/local/bin:$PATH"
+export PATH="/opt/homebrew/bin:/usr/local/bin:/opt/local/bin:$PATH"
+[ -z "$PREFIX" ] || export PATH="$PREFIX/@GR_RUNTIME_DIR@:$PATH"
 
 # Python: the one shipped with the installer, else the interpreter named in
 # the program's shebang (Homebrew/conda/venv installs), else python3 on PATH.
 PYTHON=""
-if [ -x "$PREFIX/@GR_RUNTIME_DIR@/python.exe" ]; then
+if [ -n "$PREFIX" ] && [ -x "$PREFIX/@GR_RUNTIME_DIR@/python.exe" ]; then
     PYTHON="$PREFIX/@GR_RUNTIME_DIR@/python.exe"
 else
     IFS= read -r SHEBANG < "$PROGRAM"
@@ -71,7 +76,12 @@ else
 fi
 [ -n "$PYTHON" ] || fail "Python 3 was not found."
 
-export PYTHONPATH="$PREFIX/@GR_PYTHON_DIR@${PYTHONPATH:+:$PYTHONPATH}"
+if [ -n "$PREFIX" ]; then
+    export PYTHONPATH="$PREFIX/@GR_PYTHON_DIR@${PYTHONPATH:+:$PYTHONPATH}"
+else
+    export PYTHONPATH="$RUNTIME/python:$RUNTIME/site-packages${PYTHONPATH:+:$PYTHONPATH}"
+    export GRC_BLOCKS_DIR="${GRC_BLOCKS_DIR:-$RUNTIME/blocks}"
+fi
 
 # Finder starts applications without a locale; Python and Qt then fall back to "C".
 export LANG="${LANG:-en_US.UTF-8}"

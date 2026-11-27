@@ -4,6 +4,7 @@ from PyQt6.QtWidgets import QGraphicsItem
 
 from . import colors
 from ... import Constants
+from ... import Utils
 from ....core.ports import Port as CorePort
 
 # Logging
@@ -64,7 +65,7 @@ class GUIPort(QGraphicsItem):
         self._hovering = False
         self.auto_hide_port_labels = False
 
-        self.font = QFont('Helvetica', 8)
+        self.font = Utils.canvas_font(8)
         self.fm = QFontMetrics(self.font)
 
         # TODO: Move somewhere else? Not necessarily

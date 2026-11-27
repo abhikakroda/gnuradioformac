@@ -27,9 +27,9 @@ import pstats
 
 from typing import Union
 
-from PyQt6.QtCore import QMetaObject, QPointF, QThreadPool, QUrl, Qt, pyqtSlot
+from PyQt6.QtCore import QMetaObject, QPointF, QThreadPool, QTimer, QUrl, Qt, pyqtSlot
 from PyQt6.QtGui import QDesktopServices, QIcon, QKeySequence, QAction, QPalette
-from PyQt6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMenu, QMessageBox, QProgressBar, QStyle, QTabWidget, QToolBar, QUndoView
+from PyQt6.QtWidgets import QApplication, QDockWidget, QFileDialog, QMainWindow, QMenu, QMessageBox, QProgressBar, QStyle, QTabWidget, QToolBar, QUndoView
 
 # Custom modules
 from .flowgraph_view import FlowgraphView
@@ -55,6 +55,9 @@ from .oot_browser import OOTBrowser
 from .dialogs import ErrorsDialog
 from ...core.base import Element
 from ... import paths
+
+# Bump when the default dock layout changes so stale saved layouts are dropped.
+MACOS_LAYOUT_VERSION = 2
 
 # Logging
 log = logging.getLogger(f"grc.application.{__name__}")
@@ -207,9 +210,12 @@ class MainWindow(QMainWindow, base.Component):
         if not grc_file_found:
             self.new_triggered()
 
+        restored_state = False
         try:
             self.restoreGeometry(self.app.qsettings.value("window/geometry"))
-            self.restoreState(self.app.qsettings.value("window/windowState"))
+            if sys.platform != "darwin" or \
+                    self.app.qsettings.value("window/layout_version", 0, type=int) >= MACOS_LAYOUT_VERSION:
+                restored_state = self.restoreState(self.app.qsettings.value("window/windowState"))
         except TypeError:
             log.warning("Could not restore window geometry and state.")
 
@@ -227,6 +233,8 @@ class MainWindow(QMainWindow, base.Component):
 
         if sys.platform == "darwin":
             self.apply_macos_native_chrome()
+            if not restored_state:
+                QTimer.singleShot(0, self.apply_default_dock_layout)
 
     """def show(self):
         log.debug("Showing main window")
@@ -300,6 +308,30 @@ class MainWindow(QMainWindow, base.Component):
         self.currentFlowgraphScene.undoStack.push(action)
         self.updateActions()
         self.currentFlowgraphScene.update()
+
+    def apply_default_dock_layout(self):
+        """Give the side and bottom panels a usable size (the dock separators stay draggable)."""
+        docks = [dock for dock in self.findChildren(QDockWidget) if not dock.isFloating()]
+        by_area = {}
+        for dock in docks:
+            by_area.setdefault(self.dockWidgetArea(dock), []).append(dock)
+        for dock in docks:
+            dock.setMinimumWidth(220)
+        left = by_area.get(Qt.DockWidgetArea.LeftDockWidgetArea, [])
+        right = by_area.get(Qt.DockWidgetArea.RightDockWidgetArea, [])
+        bottom = by_area.get(Qt.DockWidgetArea.BottomDockWidgetArea, [])
+        if left:
+            self.resizeDocks(left, [300] * len(left), Qt.Orientation.Horizontal)
+        if right:
+            self.resizeDocks(right, [300] * len(right), Qt.Orientation.Horizontal)
+        if bottom:
+            self.resizeDocks(bottom, [200] * len(bottom), Qt.Orientation.Vertical)
+            if len(bottom) > 1:
+                available = max(self.width() - 300 * bool(left) - 300 * bool(right), 600)
+                console = [d for d in bottom if d.windowTitle() == "Console"]
+                weights = {id(d): (0.6 if d in console else 0.4) for d in bottom}
+                self.resizeDocks(bottom, [int(available * weights[id(d)]) for d in bottom],
+                                 Qt.Orientation.Horizontal)
 
     def apply_macos_native_chrome(self):
         """Make the main window and menus behave like a regular macOS document app."""
@@ -1839,6 +1871,7 @@ class MainWindow(QMainWindow, base.Component):
         # Write the leftmost tab to file first
         self.app.qsettings.setValue('window/files_open', reversed(files_open))
         self.app.qsettings.setValue('window/windowState', self.saveState())
+        self.app.qsettings.setValue('window/layout_version', MACOS_LAYOUT_VERSION)
         self.app.qsettings.setValue('window/geometry', self.saveGeometry())
         self.app.qsettings.sync()
 

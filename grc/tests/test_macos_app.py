@@ -80,3 +80,35 @@ def test_launcher_templates_exist_and_keep_bundle_identity():
 def test_activate_application_does_nothing_off_macos(monkeypatch):
     monkeypatch.setattr(macos.sys, "platform", "linux")
     assert macos.activate_application() is False
+
+
+def test_bundle_resources_do_not_reference_temporary_paths():
+    resources = os.path.dirname(PLIST_TEMPLATE)
+    for name in ("launcher.cpp.in", "launcher.sh.in", "embed_runtime.py",
+                 "embed_runtime.cmake.in", "Info.plist.in"):
+        text = open(os.path.join(resources, name), encoding="utf-8").read()
+        assert "/tmp" not in text, name
+        assert "CMAKE_INSTALL_PREFIX@" not in text, name
+
+
+def test_launchers_prefer_the_embedded_runtime():
+    resources = os.path.dirname(PLIST_TEMPLATE)
+    for name in ("launcher.cpp.in", "launcher.sh.in"):
+        text = open(os.path.join(resources, name), encoding="utf-8").read()
+        assert "grc-runtime" in text, name
+        assert "GRC_BLOCKS_DIR" in text, name
+
+
+def test_embed_runtime_finds_pyqt_site_and_skips_junk(tmp_path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "embed_runtime", os.path.join(os.path.dirname(PLIST_TEMPLATE), "embed_runtime.py"))
+    embed = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(embed)
+
+    (tmp_path / "PyQt6").mkdir()
+    assert embed.find_pyqt_site("python3", str(tmp_path)) == str(tmp_path)
+    assert embed.find_pyqt_site("python3", str(tmp_path / "missing")) is None
+    assert embed.ignore_junk("x", ["a.py", "a.pyc", "__pycache__", ".DS_Store"]) == [
+        "a.pyc", "__pycache__", ".DS_Store"]
+    assert {"QtCore", "QtGui", "QtWidgets"} <= embed.PYQT_MODULES

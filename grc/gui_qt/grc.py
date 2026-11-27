@@ -18,12 +18,13 @@
 from __future__ import absolute_import, print_function
 
 # Standard modules
+import importlib.abc
 import logging
 import textwrap
 import os
 import sys
 
-from PyQt6.QtCore import QEvent, QSettings, Qt, QT_VERSION_STR, PYQT_VERSION_STR
+from PyQt6.QtCore import QEvent, QSettings, QTimer, Qt, QT_VERSION_STR, PYQT_VERSION_STR
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
@@ -37,6 +38,24 @@ from .helpers.profiling import StopWatch
 log = logging.getLogger("grc.application")
 
 APP_DISPLAY_NAME = "GNU Radio Companion"
+
+
+class _ForeignQtBlocker(importlib.abc.MetaPathFinder):
+    """Refuse to load a second Qt major version into this PyQt6 process.
+
+    Block definitions run their `imports` (for example "from PyQt5 import Qt"
+    of blocks written for a Qt5 GNU Radio) inside GRC to evaluate parameters.
+    Qt5 and Qt6 in one process register the same Objective-C classes on macOS
+    and crash; GRC treats a failed import there as a harmless hier-block
+    import, so the failure is safe.
+    """
+
+    PREFIXES = ("PyQt5", "PySide2")
+
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split(".")[0] in self.PREFIXES:
+            raise ImportError(f"{fullname} cannot be loaded into the PyQt6 based GNU Radio Companion")
+        return None
 
 
 class Application(QApplication):
@@ -55,6 +74,9 @@ class Application(QApplication):
         self.qsettings = QSettings(config.gui_prefs_file, QSettings.Format.IniFormat)
         log.debug(f"Using QSettings from {config.gui_prefs_file}")
         os.environ["QT_SCALE_FACTOR"] = self.qsettings.value('appearance/qt_scale_factor', "1.0", type=str)
+
+        if sys.platform == "darwin" and not any(isinstance(f, _ForeignQtBlocker) for f in sys.meta_path):
+            sys.meta_path.insert(0, _ForeignQtBlocker())
 
         log.debug("Creating QApplication instance")
         QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
@@ -221,5 +243,17 @@ class Application(QApplication):
         self.MainWindow.raise_()
         self.MainWindow.activateWindow()
         if self.is_macos:
-            macos.activate_application()
+            # LaunchServices may still be finishing the launch (for example
+            # after `open`), so bring the window forward again once the event
+            # loop runs, for a short while only so later focus is not stolen.
+            for delay_ms in (0, 250, 750):
+                QTimer.singleShot(delay_ms, self._bring_to_front)
         return self.exec()
+
+    def _bring_to_front(self):
+        window = self.MainWindow
+        if window.isMinimized():
+            window.showNormal()
+        window.raise_()
+        window.activateWindow()
+        macos.activate_application()

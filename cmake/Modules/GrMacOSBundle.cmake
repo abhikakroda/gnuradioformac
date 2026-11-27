@@ -9,8 +9,11 @@
 #
 #   <NAME>.app/Contents/Info.plist
 #   <NAME>.app/Contents/PkgInfo
-#   <NAME>.app/Contents/MacOS/<EXECUTABLE>      launcher script
+#   <NAME>.app/Contents/MacOS/<EXECUTABLE>      native launcher (embeds Python)
 #   <NAME>.app/Contents/Resources/<ICON>.icns   Dock / Finder icon
+#   <NAME>.app/Contents/Resources/grc-runtime/  GRC, blocks, PyQt6 and Qt
+#                                               (GR_MACOS_BUNDLE_RUNTIME), then
+#                                               the bundle is ad-hoc signed
 #
 # The bundle is installed under GR_MACOS_APP_DESTINATION, relative to
 # CMAKE_INSTALL_PREFIX: the install prefix itself for installer builds
@@ -23,6 +26,12 @@ endif()
 
 option(ENABLE_MACOS_APP_BUNDLE "Install GNU Radio Companion as a macOS .app bundle" ON)
 option(GR_MACOS_NATIVE_LAUNCHER "Build the .app launcher as a native executable embedding Python" ON)
+option(GR_MACOS_BUNDLE_RUNTIME
+    "Copy GRC, its blocks and PyQt6/Qt into the .app and ad-hoc sign it, so it runs without the install tree" ON)
+set(GR_MACOS_APP_PYQT_SITE "" CACHE PATH
+    "site-packages directory holding PyQt6 to bundle (default: the one PYTHON_EXECUTABLE imports)")
+set(GR_MACOS_APP_EXTRA_BLOCKS_DIRS "" CACHE STRING
+    "Further GRC block directories to bundle underneath the installed ones (semicolon separated)")
 
 function(gr_install_macos_app_bundle)
     set(options)
@@ -109,7 +118,7 @@ function(gr_install_macos_app_bundle)
         # PyGObject, Qt, ...) are found through the executable's rpaths, so
         # list the usual Homebrew/MacPorts locations and the install tree.
         set(launcher_rpath
-            "${py_lib_dir}" "${CMAKE_INSTALL_PREFIX}/lib"
+            "${py_lib_dir}"
             "@executable_path/../../../../lib" "@executable_path/../../../lib"
             "/opt/homebrew/lib" "/usr/local/lib" "/opt/local/lib")
         set_target_properties(${launcher_target} PROPERTIES
@@ -125,6 +134,22 @@ function(gr_install_macos_app_bundle)
         message(STATUS "Using the shell launcher for ${APP_NAME}.app")
     endif()
     install(FILES "${APP_ICON}" DESTINATION "${contents}/Resources")
+
+    if(GR_MACOS_BUNDLE_RUNTIME AND PYTHON_EXECUTABLE)
+        set(GR_MACOS_EMBED_SCRIPT "${resource_dir}/embed_runtime.py")
+        set(GR_MACOS_EMBED_EXTRA_ARGS "")
+        foreach(extra_blocks ${GR_MACOS_APP_EXTRA_BLOCKS_DIRS})
+            string(APPEND GR_MACOS_EMBED_EXTRA_ARGS "        --blocks \"${extra_blocks}\"\n")
+        endforeach()
+        set(GR_MACOS_EMBED_PYQT_ARGS "")
+        if(GR_MACOS_APP_PYQT_SITE)
+            set(GR_MACOS_EMBED_PYQT_ARGS "        --pyqt-site \"${GR_MACOS_APP_PYQT_SITE}\"")
+        endif()
+        configure_file("${resource_dir}/embed_runtime.cmake.in" "${staging}/embed_runtime.cmake" @ONLY)
+        # Defined after the GRC python/blocks/scripts install rules of the
+        # callers, so it runs once those files are in place.
+        install(SCRIPT "${staging}/embed_runtime.cmake")
+    endif()
 
     message(STATUS "Creating install rules for ${APP_NAME}.app in ${GR_MACOS_APP_DESTINATION}")
 endfunction()

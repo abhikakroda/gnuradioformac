@@ -2,6 +2,7 @@ from __future__ import absolute_import, print_function
 
 # Standard modules
 import logging
+import sys
 
 import xml.etree.ElementTree as ET
 
@@ -22,6 +23,7 @@ from ...core.generator import Generator
 # Logging
 log = logging.getLogger(f"grc.application.{__name__}")
 
+DEFAULT_SCALE = 1.0 if sys.platform == "darwin" else 0.8
 DEFAULT_MAX_X = 400
 DEFAULT_MAX_Y = 300
 
@@ -39,7 +41,7 @@ class FlowgraphView(
 
         self.setScene(FlowgraphScene(self, platform))
 
-        self.scalefactor = 0.8
+        self.scalefactor = DEFAULT_SCALE
         self.scale(self.scalefactor, self.scalefactor)
 
         self.setSceneRect(0, 0, DEFAULT_MAX_X, DEFAULT_MAX_Y)
@@ -48,7 +50,15 @@ class FlowgraphView(
         else:
             self.initEmpty()
 
-        self.fitInView(self.scene().sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+        if sys.platform == "darwin":
+            # Fitting the whole flowgraph into the window shrinks the text
+            # below a readable size; open at the default zoom instead.
+            self.resetTransform()
+            self.scalefactor = DEFAULT_SCALE
+            self.scale(self.scalefactor, self.scalefactor)
+            self.centerOn(0, 0)
+        else:
+            self.fitInView(self.scene().sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
         self.apply_theme()
 
         self.isPanning = False
@@ -141,7 +151,7 @@ class FlowgraphView(
 
     def zoomOriginal(self):
         # TODO: Original scale factor as a constant?
-        self.zoom(0.8 / self.scalefactor)
+        self.zoom(DEFAULT_SCALE / self.scalefactor)
 
     def wheelEvent(self, event):
         # TODO: Support multi touch drag and drop for scrolling through the view
