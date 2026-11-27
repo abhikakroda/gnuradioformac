@@ -1,0 +1,23 @@
+# Copyright 2026 Free Software Foundation, Inc.
+#
+# This file is part of GNU Radio
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Install-time step of "@GR_MACOS_APP_NAME@.app": runs after the GRC Python
+# package, program and blocks are installed and makes the bundle
+# self-contained and ad-hoc signed (see embed_runtime.py).
+
+execute_process(
+    COMMAND "@PYTHON_EXECUTABLE@" "@GR_MACOS_EMBED_SCRIPT@"
+        --app "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/@GR_MACOS_APP_DESTINATION@/@GR_MACOS_APP_NAME@.app"
+        --python "@PYTHON_EXECUTABLE@"
+        --gnuradio-python-dir "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/@GR_PYTHON_DIR@"
+        --program "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/@GR_RUNTIME_DIR@/@GR_MACOS_APP_PROGRAM@"
+@GR_MACOS_EMBED_EXTRA_ARGS@
+        --blocks "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/@GRC_BLOCKS_DIR@"
+@GR_MACOS_EMBED_PYQT_ARGS@
+    RESULT_VARIABLE embed_result)
+if(NOT embed_result EQUAL 0)
+    message(FATAL_ERROR "Could not bundle the runtime into @GR_MACOS_APP_NAME@.app")
+endif()

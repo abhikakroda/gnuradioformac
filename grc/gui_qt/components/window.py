@@ -27,11 +27,14 @@ import pstats
 
 from typing import Union
 
-from PyQt6.QtCore import QMetaObject, QPointF, QThreadPool, QUrl, Qt, pyqtSlot
-from PyQt6.QtGui import QDesktopServices, QIcon, QKeySequence, QAction, QPalette
-from PyQt6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMenu, QMessageBox, QProgressBar, QStyle, QTabWidget, QToolBar, QUndoView
+from PyQt6.QtCore import QEvent, QMetaObject, QPointF, QSize, QThreadPool, QTimer, QUrl, Qt, pyqtSlot
+from PyQt6.QtGui import QColor, QDesktopServices, QFont, QIcon, QKeySequence, QAction, QPainter, QPalette
+from PyQt6.QtWidgets import (QApplication, QDockWidget, QFileDialog, QFrame, QHBoxLayout, QLabel,
+                             QMainWindow, QMenu, QMessageBox, QProgressBar, QSizePolicy, QStyle,
+                             QTabWidget, QToolBar, QToolButton, QUndoView, QWidget)
 
 # Custom modules
+from . import native_ui
 from .flowgraph_view import FlowgraphView
 from .canvas.flowgraph import FlowgraphScene
 from .example_browser import ExampleBrowser, ExampleBrowserDialog, Worker
@@ -54,7 +57,11 @@ from .preferences import PreferencesDialog
 from .oot_browser import OOTBrowser
 from .dialogs import ErrorsDialog
 from ...core.base import Element
+from ...core.utils import macos
 from ... import paths
+
+# Bump when the default dock layout changes so stale saved layouts are dropped.
+MACOS_LAYOUT_VERSION = 3
 
 # Logging
 log = logging.getLogger(f"grc.application.{__name__}")
@@ -63,9 +70,49 @@ log = logging.getLogger(f"grc.application.{__name__}")
 Action = QAction
 Menu = QMenu
 Toolbar = QToolBar
-Icons = QIcon.fromTheme
+
+
+def Icons(name):
+    """Theme icon; on macOS Qt resolves these to SF Symbols, with a symbol for those it has no mapping for."""
+    icon = QIcon.fromTheme(name)
+    if icon.isNull() and name in MACOS_FALLBACK_ICONS:
+        icon = QIcon.fromTheme(MACOS_FALLBACK_ICONS[name])
+    return icon
+
+
+MACOS_FALLBACK_ICONS = {
+    "system-run": "hammer",
+    "edit-select_all": "checkmark.square",
+    "document-close": "xmark.circle",
+}
 Keys = QKeySequence.StandardKey
 QStyle = QStyle
+
+
+class SidebarHeader(QWidget):
+    """Small secondary-colour section title that follows the current appearance."""
+
+    def __init__(self, text):
+        super().__init__()
+        self.text = text
+        font = self.font()
+        font.setPointSizeF(font.pointSizeF() * 0.85)
+        font.setWeight(QFont.Weight.DemiBold)
+        self.setFont(font)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
+    def sizeHint(self):
+        metrics = self.fontMetrics()
+        return QSize(metrics.horizontalAdvance(self.text) + 20, metrics.height() + 14)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        color = self.palette().color(QPalette.ColorRole.WindowText)
+        color.setAlpha(150)
+        painter.setPen(color)
+        painter.setFont(self.font())
+        painter.drawText(self.rect().adjusted(12, 4, -8, 0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                         self.text)
 
 
 class MainWindow(QMainWindow, base.Component):
@@ -75,7 +122,8 @@ class MainWindow(QMainWindow, base.Component):
 
         log.debug("Setting the main window")
         self.setObjectName("main")
-        self.setWindowTitle(_("window-title"))
+        title = _("window-title")
+        self.setWindowTitle(title if title != "window-title" else "GNU Radio Companion")
         self.setDockOptions(
             QMainWindow.DockOption.AllowNestedDocks |
             QMainWindow.DockOption.AllowTabbedDocks |
@@ -94,7 +142,12 @@ class MainWindow(QMainWindow, base.Component):
         log.debug(
             "Setting window size - ({}, {})".format(monitor.width(), monitor.height())
         )
-        self.resize(int(monitor.width() * 0.50), monitor.height())
+        if sys.platform == "darwin":
+            self.resize(int(monitor.width() * 0.85), int(monitor.height() * 0.9))
+            self.move(monitor.x() + (monitor.width() - self.width()) // 2,
+                      monitor.y() + (monitor.height() - self.height()) // 2)
+        else:
+            self.resize(int(monitor.width() * 0.50), monitor.height())
 
         self.setCorner(Qt.Corner.BottomLeftCorner, Qt.DockWidgetArea.LeftDockWidgetArea)
 
@@ -166,6 +219,11 @@ class MainWindow(QMainWindow, base.Component):
 
         self.tabWidget = QTabWidget()
         self.tabWidget.setTabsClosable(True)
+        if sys.platform == "darwin":
+            self.tabWidget.setMovable(True)
+            self.tabWidget.setUsesScrollButtons(True)
+            self.tabWidget.setElideMode(Qt.TextElideMode.ElideMiddle)
+            self.tabWidget.tabBar().setExpanding(True)
         self.tabWidget.tabCloseRequested.connect(
             lambda index: self.close_triggered(index)
         )
@@ -191,9 +249,11 @@ class MainWindow(QMainWindow, base.Component):
         if not grc_file_found:
             self.new_triggered()
 
+        restored_state = False
         try:
             self.restoreGeometry(self.app.qsettings.value("window/geometry"))
-            self.restoreState(self.app.qsettings.value("window/windowState"))
+            if sys.platform != "darwin":
+                restored_state = self.restoreState(self.app.qsettings.value("window/windowState"))
         except TypeError:
             log.warning("Could not restore window geometry and state.")
 
@@ -208,6 +268,9 @@ class MainWindow(QMainWindow, base.Component):
         ExampleFinder.signals.result.connect(self.populate_libraries_w_examples)
         ExampleFinder.signals.progress.connect(self.update_progress_bar)
         self.threadpool.start(ExampleFinder)
+
+        if sys.platform == "darwin":
+            self.apply_macos_native_chrome()
 
     """def show(self):
         log.debug("Showing main window")
@@ -281,6 +344,276 @@ class MainWindow(QMainWindow, base.Component):
         self.currentFlowgraphScene.undoStack.push(action)
         self.updateActions()
         self.currentFlowgraphScene.update()
+
+    def apply_default_dock_layout(self):
+        """Give the side and bottom panels a usable size (the dock separators stay draggable)."""
+        docks = [dock for dock in self.findChildren(QDockWidget) if not dock.isFloating()]
+        by_area = {}
+        for dock in docks:
+            by_area.setdefault(self.dockWidgetArea(dock), []).append(dock)
+        for dock in docks:
+            dock.setMinimumWidth(220)
+        left = by_area.get(Qt.DockWidgetArea.LeftDockWidgetArea, [])
+        right = by_area.get(Qt.DockWidgetArea.RightDockWidgetArea, [])
+        bottom = by_area.get(Qt.DockWidgetArea.BottomDockWidgetArea, [])
+        if left:
+            self.resizeDocks(left, [300] * len(left), Qt.Orientation.Horizontal)
+        if right:
+            self.resizeDocks(right, [300] * len(right), Qt.Orientation.Horizontal)
+        if bottom:
+            self.resizeDocks(bottom, [200] * len(bottom), Qt.Orientation.Vertical)
+            if len(bottom) > 1:
+                available = max(self.width() - 300 * bool(left) - 300 * bool(right), 600)
+                console = [d for d in bottom if d.windowTitle() == "Console"]
+                weights = {id(d): (0.6 if d in console else 0.4) for d in bottom}
+                self.resizeDocks(bottom, [int(available * weights[id(d)]) for d in bottom],
+                                 Qt.Orientation.Horizontal)
+
+    def apply_macos_native_chrome(self):
+        """Make the main window and menus behave like a regular macOS document app."""
+        actions = self.actions
+        actions["preferences"].setMenuRole(QAction.MenuRole.PreferencesRole)
+        actions["exit"].setMenuRole(QAction.MenuRole.QuitRole)
+        actions["about"].setMenuRole(QAction.MenuRole.AboutRole)
+        actions["about_qt"].setMenuRole(QAction.MenuRole.AboutQtRole)
+
+        # Mac keyboards have a Delete key that sends Backspace, and function
+        # keys that are taken by the system unless Fn is held.
+        actions["delete"].setShortcuts([Keys.Delete, QKeySequence(Qt.Key.Key_Backspace)])
+        actions["generate"].setShortcuts([QKeySequence("F5"), QKeySequence("Ctrl+B")])
+        actions["execute"].setShortcuts([QKeySequence("F6"), QKeySequence("Ctrl+R")])
+        actions["kill"].setShortcuts([QKeySequence("F7"), QKeySequence("Ctrl+.")])
+
+        # One unified title bar + toolbar, no toolbar dragging, icon-only buttons.
+        self.setUnifiedTitleAndToolBarOnMac(True)
+        for toolbar in self.toolbars.values():
+            toolbar.setMovable(False)
+            toolbar.setFloatable(False)
+            toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.tabWidget.setDocumentMode(True)
+        self.setDocumentMode(True)
+
+        self.setup_view_menu_items()
+        self.setup_unified_title_bar()
+        self.setup_window_menu()
+
+    def restore_macos_layout(self):
+        """Restore dock/toolbar state once all docks are registered, or apply defaults."""
+        restored = False
+        try:
+            self.restoreGeometry(self.app.qsettings.value("window/geometry"))
+            if self.app.qsettings.value("window/layout_version", 0, type=int) >= MACOS_LAYOUT_VERSION:
+                state = self.app.qsettings.value("window/windowState")
+                if state:
+                    restored = self.restoreState(state)
+        except TypeError:
+            log.warning("Could not restore window geometry and state.")
+        if not restored:
+            QTimer.singleShot(0, self.apply_default_dock_layout)
+        self.update_sidebar_action()
+
+    vibrancy_wanted = os.environ.get("GRC_MACOS_NO_VIBRANCY") is None
+
+    def setup_sidebar_vibrancy(self):
+        """Blur-behind sidebars: Qt paints nothing there, AppKit's material shows through."""
+        if getattr(self, "unified_title_bar", False):
+            self.style_dock_headers()
+        if not (self.vibrancy_wanted and getattr(self, "unified_title_bar", False)):
+            return False
+        if not macos.add_sidebar_vibrancy(self.winId(), self.width(), self.height()):
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+            return False
+        self.sidebar_vibrancy = True
+        clear = QColor(0, 0, 0, 0)
+
+        def make_clear(widget):
+            palette = widget.palette()
+            for role in (QPalette.ColorRole.Window, QPalette.ColorRole.Base, QPalette.ColorRole.AlternateBase):
+                palette.setColor(role, clear)
+            widget.setPalette(palette)
+            widget.setAutoFillBackground(False)
+
+        make_clear(self)
+        for dock in self.sidebar_docks():
+            for widget in [dock] + dock.findChildren(QWidget):
+                make_clear(widget)
+        return True
+
+    def style_dock_headers(self):
+        """Replace the dock title bars by quiet section headers, as in a native sidebar."""
+        for dock in self.findChildren(QDockWidget):
+            if dock.titleBarWidget() is not None:
+                continue
+            header = SidebarHeader(dock.windowTitle().upper())
+            dock.setTitleBarWidget(header)
+
+    TRAFFIC_LIGHT_SPACE = 76
+    TOOLBAR_HEIGHT = 52
+
+    def setup_unified_title_bar(self):
+        """Put the toolbar in the title bar row (full-size content view)."""
+        if self.vibrancy_wanted:
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        if not macos.configure_unified_window(self.winId()):
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+            self.vibrancy_wanted = False
+            return
+        self.unified_title_bar = True
+        self.setAttribute(Qt.WidgetAttribute.WA_ContentsMarginsRespectsSafeArea, False)
+        first = None
+        for toolbar in self.toolbars.values():
+            toolbar.setIconSize(QSize(22, 22))
+            toolbar.setFixedHeight(self.TOOLBAR_HEIGHT)
+            if self.vibrancy_wanted:
+                toolbar.setStyleSheet("QToolBar { background: transparent; border: 0; }")
+            toolbar.installEventFilter(self)
+            if first is None:
+                first = toolbar
+        if first is not None:
+            spacer = QWidget()
+            spacer.setFixedWidth(self.TRAFFIC_LIGHT_SPACE)
+            spacer.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            first_action = first.actions()[0]
+            first.insertWidget(first_action, spacer)
+            if "toggle_sidebars" in self.actions:
+                sidebar_icon = QIcon.fromTheme("sidebar.left")
+                if not sidebar_icon.isNull():
+                    self.actions["toggle_sidebars"].setIcon(sidebar_icon)
+                first.insertAction(first_action, self.actions["toggle_sidebars"])
+                first.insertSeparator(first_action)
+
+        last = list(self.toolbars.values())[-1]
+        zoom_group = QFrame()
+        zoom_group.setObjectName("macos_zoom_segmented")
+        zoom_group.setStyleSheet(
+            "#macos_zoom_segmented { border: 1px solid palette(mid); border-radius: 6px; }"
+            "#macos_zoom_segmented QToolButton { border: 0; padding: 2px 6px; background: transparent; }"
+        )
+        zoom_layout = QHBoxLayout(zoom_group)
+        zoom_layout.setContentsMargins(2, 1, 2, 1)
+        zoom_layout.setSpacing(0)
+        for key, symbol, text in (
+            ("zoom_out", "minus.magnifyingglass", None),
+            ("zoom_original", None, "100%"),
+            ("zoom_in", "plus.magnifyingglass", None),
+        ):
+            btn = QToolButton(zoom_group)
+            btn.setDefaultAction(self.actions[key])
+            btn.setAutoRaise(True)
+            if symbol:
+                sym = QIcon.fromTheme(symbol)
+                if not sym.isNull():
+                    btn.setIcon(sym)
+            if text:
+                btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+                btn.setText(text)
+            else:
+                btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+            zoom_layout.addWidget(btn)
+        last.addWidget(zoom_group)
+        stretch = QWidget()
+        stretch.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        last.addWidget(stretch)
+        self.title_label = QLabel()
+        self.title_label.setContentsMargins(0, 0, 14, 0)
+        font = self.title_label.font()
+        font.setWeight(QFont.Weight.DemiBold)
+        self.title_label.setFont(font)
+        last.addWidget(self.title_label)
+        self.update_window_document()
+
+    def eventFilter(self, obj, event):
+        if (getattr(self, "unified_title_bar", False) and isinstance(obj, QToolBar)
+                and event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonDblClick)
+                and event.button() == Qt.MouseButton.LeftButton
+                and obj.actionAt(event.position().toPoint()) is None):
+            child = obj.childAt(event.position().toPoint())
+            if child is None or isinstance(child, (QLabel,)) or child.testAttribute(
+                    Qt.WidgetAttribute.WA_TransparentForMouseEvents) or child.sizePolicy().horizontalPolicy() == \
+                    QSizePolicy.Policy.Expanding:
+                if event.type() == QEvent.Type.MouseButtonDblClick:
+                    macos.zoom_window(self.winId())
+                elif self.windowHandle() is not None:
+                    self.windowHandle().startSystemMove()
+                return True
+        return super().eventFilter(obj, event)
+
+    def setup_view_menu_items(self):
+        view = self.menus["view"]
+        sidebar = QAction("Hide Sidebars", self)
+        sidebar.setShortcut(QKeySequence("Ctrl+Alt+S"))
+        sidebar.setStatusTip("Show or hide the block library and variable panels")
+        sidebar.triggered.connect(self.toggle_sidebars)
+        self.actions["toggle_sidebars"] = sidebar
+
+        view.insertAction(self.menus["panels"].menuAction(), sidebar)
+        self.hidden_sidebars = []
+
+    def sidebar_docks(self):
+        areas = (Qt.DockWidgetArea.LeftDockWidgetArea, Qt.DockWidgetArea.RightDockWidgetArea)
+        return [dock for dock in self.findChildren(QDockWidget)
+                if not dock.isFloating() and self.dockWidgetArea(dock) in areas]
+
+    def toggle_sidebars(self):
+        visible = [dock for dock in self.sidebar_docks() if dock.isVisible()]
+        if visible:
+            self.hidden_sidebars = visible
+            for dock in visible:
+                dock.hide()
+        else:
+            for dock in self.hidden_sidebars or self.sidebar_docks():
+                dock.show()
+            self.hidden_sidebars = []
+        self.update_sidebar_action()
+
+    def update_sidebar_action(self):
+        shown = any(dock.isVisible() for dock in self.sidebar_docks())
+        self.actions["toggle_sidebars"].setText("Hide Sidebars" if shown else "Show Sidebars")
+
+    def setup_window_menu(self):
+        window = QMenu("&Window", self)
+        minimize = QAction("Minimize", self)
+        minimize.setShortcut(QKeySequence("Ctrl+M"))
+        minimize.triggered.connect(self.showMinimized)
+        zoom = QAction("Zoom", self)
+        zoom.triggered.connect(lambda: macos.zoom_window(self.winId()))
+        previous_tab = QAction("Show Previous Tab", self)
+        previous_tab.setShortcuts([QKeySequence("Ctrl+Shift+["), QKeySequence("Ctrl+Alt+Left")])
+        previous_tab.triggered.connect(lambda: self.step_tab(-1))
+        next_tab = QAction("Show Next Tab", self)
+        next_tab.setShortcuts([QKeySequence("Ctrl+Shift+]"), QKeySequence("Ctrl+Alt+Right")])
+        next_tab.triggered.connect(lambda: self.step_tab(1))
+        front = QAction("Bring All to Front", self)
+        front.triggered.connect(macos.bring_all_to_front)
+        for action in (minimize, zoom):
+            window.addAction(action)
+        window.addSeparator()
+        window.addAction(previous_tab)
+        window.addAction(next_tab)
+        window.addSeparator()
+        window.addAction(front)
+        for action in (minimize, zoom, previous_tab, next_tab, front):
+            action.setMenuRole(QAction.MenuRole.NoRole)
+        self.menus["window"] = window
+        self.menuBar().insertMenu(self.menus["help"].menuAction(), window)
+
+    def step_tab(self, step):
+        count = self.tabWidget.count()
+        if count > 1:
+            self.tabWidget.setCurrentIndex((self.tabWidget.currentIndex() + step) % count)
+
+    def update_window_document(self):
+        """Show the open flowgraph's file, proxy icon and edited dot in the title bar."""
+        if sys.platform != "darwin" or self.tabWidget.count() == 0:
+            return
+        scene = self.currentFlowgraphScene
+        filename = scene.filename or ""
+        self.setWindowFilePath(filename)
+        name = os.path.basename(filename) or "Untitled"
+        self.setWindowTitle(f"{name}[*]")
+        self.setWindowModified(not scene.saved)
+        if getattr(self, "title_label", None) is not None:
+            self.title_label.setText(name + ("" if scene.saved else " \u2014 Edited"))
 
     def createActions(self, actions):
         """
@@ -655,7 +988,8 @@ class MainWindow(QMainWindow, base.Component):
         valid_fg = self.currentFlowgraph.is_valid()
         saved_fg = self.currentFlowgraphScene.saved
 
-        self.actions["save"].setEnabled(not saved_fg)
+        self.actions["save"].setEnabled(not saved_fg or not self.currentFlowgraphScene.filename)
+        self.update_window_document()
 
         self.actions["undo"].setEnabled(canUndo)
         self.actions["redo"].setEnabled(canRedo)
@@ -909,28 +1243,32 @@ class MainWindow(QMainWindow, base.Component):
         log.debug("Creating status bar")
         self.statusBar().showMessage(_("ready-message"))
 
+    @staticmethod
+    def default_directory():
+        """Where file panels start: the working directory, or the home folder for an app launched from Finder."""
+        cwd = os.getcwd()
+        if sys.platform == "darwin" and cwd in ("/", ""):
+            return os.path.expanduser("~")
+        return cwd
+
     def open(self):
         if self.currentFlowgraphScene.filename:
             dirname = os.path.dirname(self.currentFlowgraphScene.filename)
         else:
-            dirname = os.getcwd()
-        Open = QFileDialog.getOpenFileName
-        filename, filtr = Open(
-            self,  # parent
-            self.actions["open"].statusTip(),  # caption
-            dirname,  # dir
-            filter="Flow Graph Files (*.grc);;All files (*.*)",
+            dirname = self.default_directory()
+        return native_ui.open_file(
+            self,
+            self.actions["open"].statusTip(),
+            dirname,
+            "Flow Graph Files (*.grc);;All files (*.*)",
         )
-        return filename
 
     def save(self):
-        Save = QFileDialog.getSaveFileName
-        filename, filtr = Save(
+        return native_ui.save_file(
             self,
             self.actions["save"].statusTip(),
-            filter="Flow Graph Files (*.grc);;All files (*.*)",
+            name_filter="Flow Graph Files (*.grc);;All files (*.*)",
         )
-        return filename
 
     # Overridden methods
     def addDockWidget(self, location, widget):
@@ -938,6 +1276,8 @@ class MainWindow(QMainWindow, base.Component):
         # This overrides QT's addDockWidget so that a 'show' menu auto can automatically be
         # generated for this action.
         super().addDockWidget(location, widget)
+        if "toggle_sidebars" in self.actions:
+            widget.visibilityChanged.connect(lambda _visible: self.update_sidebar_action())
         # This is the only instance where a controller holds a reference to a view it does not
         # actually control.
         name = widget.__class__.__name__
@@ -994,7 +1334,7 @@ class MainWindow(QMainWindow, base.Component):
         fg_view.centerOn(0, 0)
         initial_state = self.platform.parse_flow_graph("")
         fg_view.scene().import_data(initial_state)
-        fg_view.scene().saved = False
+        fg_view.scene().saved = sys.platform == "darwin"  # pristine documents close without a prompt
         self.connect_fg_signals(fg_view.scene())
         log.debug("Adding flowgraph view")
         self.tabWidget.addTab(fg_view, "Untitled")
@@ -1063,19 +1403,13 @@ class MainWindow(QMainWindow, base.Component):
 
     def save_as_triggered(self):
         log.debug("Save As")
-        file_dialog = QFileDialog()
-        file_dialog.setWindowTitle(self.actions["save"].statusTip())
-        file_dialog.setNameFilter('Flow Graph Files (*.grc)')
-        file_dialog.setDefaultSuffix('grc')
-        file_dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
         if self.currentFlowgraphScene.filename:
             dirname = os.path.dirname(self.currentFlowgraphScene.filename)
         else:
-            dirname = os.getcwd()
-        file_dialog.setDirectory(dirname)
-        filename = None
-        if file_dialog.exec() == QFileDialog.DialogCode.Accepted:
-            filename = file_dialog.selectedFiles()[0]
+            dirname = self.default_directory()
+        filename = native_ui.save_file(
+            self, self.actions["save"].statusTip(), dirname,
+            "Flow Graph Files (*.grc)", default_suffix="grc")
 
         if filename:
             self.currentFlowgraphScene.filename = filename
@@ -1097,15 +1431,9 @@ class MainWindow(QMainWindow, base.Component):
 
     def save_copy_triggered(self):
         log.debug("Save Copy")
-        file_dialog = QFileDialog()
-        file_dialog.setWindowTitle(self.actions["save"].statusTip())
-        file_dialog.setNameFilter('Flow Graph Files (*.grc)')
-        file_dialog.setDefaultSuffix('grc')
-        file_dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
-
-        filename = None
-        if file_dialog.exec() == QFileDialog.DialogCode.Accepted:
-            filename = file_dialog.selectedFiles()[0]
+        filename = native_ui.save_file(
+            self, self.actions["save"].statusTip(), "",
+            "Flow Graph Files (*.grc)", default_suffix="grc")
 
         if filename:
             try:
@@ -1157,14 +1485,28 @@ class MainWindow(QMainWindow, base.Component):
             else:
                 message = "This flowgraph has not been saved"  # TODO: Revise text
 
-            response = QMessageBox.question(
-                None,
-                "Save flowgraph?",
-                message,
-                QMessageBox.StandardButton.Discard |
-                QMessageBox.StandardButton.Cancel |
-                QMessageBox.StandardButton.Save,
-            )
+            if sys.platform == "darwin":
+                name = os.path.basename(file_path) if file_path else "Untitled"
+                response = native_ui.ask(
+                    self,
+                    f"Do you want to save the changes made to \u201c{name}\u201d?",
+                    message,
+                    QMessageBox.StandardButton.Save |
+                    QMessageBox.StandardButton.Discard |
+                    QMessageBox.StandardButton.Cancel,
+                    default=QMessageBox.StandardButton.Save,
+                    icon=QMessageBox.Icon.Warning,
+                    informative_text="Your changes will be lost if you don\u2019t save them.",
+                )
+            else:
+                response = QMessageBox.question(
+                    None,
+                    "Save flowgraph?",
+                    message,
+                    QMessageBox.StandardButton.Discard |
+                    QMessageBox.StandardButton.Cancel |
+                    QMessageBox.StandardButton.Save,
+                )
 
             if response == QMessageBox.StandardButton.Discard:
                 file_path = self.currentFlowgraphScene.filename
@@ -1205,14 +1547,13 @@ class MainWindow(QMainWindow, base.Component):
             filename = self.currentFlowgraphScene.filename.split('.')[0] + '.pdf'
         else:
             filename = 'Untitled.pdf'
-        Save = QFileDialog.getSaveFileName
-        file_path, filtr = Save(
+        file_path = native_ui.save_file(
             self,
             self.actions["screen_capture"].statusTip(),
             filename,
-            filter="PDF files (*.pdf);;PNG files (*.png);;SVG files (*.svg)",
+            "PDF files (*.pdf);;PNG files (*.png);;SVG files (*.svg)",
         )
-        if file_path is not None:
+        if file_path:
             try:
                 Utils.make_screenshot(
                     self.currentView, file_path, background_transparent
@@ -1352,16 +1693,16 @@ class MainWindow(QMainWindow, base.Component):
 
     def get_involved_triggered(self):
         log.debug("get involved")
-        ad = QMessageBox()
-        ad.setWindowTitle("Get Involved Instructions")
-        ad.setText(
+        native_ui.info(
+            self,
+            "Get Involved Instructions",
             """\
             <b>Welcome to the GNU Radio Community!</b><br/><br/>
             For more details on contributing to GNU Radio and getting engaged with our great community visit <a href="https://wiki.gnuradio.org/index.php/HowToGetInvolved">here</a>.<br/><br/>
             You can also join our <a href="https://chat.gnuradio.org/">Matrix chat server</a>, IRC Channel (#gnuradio) or contact through our <a href="https://lists.gnu.org/mailman/listinfo/discuss-gnuradio">mailing list (discuss-gnuradio)</a>.
-        """
+        """,
+            rich_text=True,
         )
-        ad.exec()
 
     def guided_tutorials_triggered(self):
         log.debug("guided tutorials")
@@ -1373,6 +1714,12 @@ class MainWindow(QMainWindow, base.Component):
         log.debug("about")
         config = self.platform.config
         py_version = sys.version.split()[0]
+        if sys.platform == "darwin" and macos.show_about_panel(
+                "GNU Radio Companion", str(config.version), f"Python {py_version}",
+                "Copyright \u00a9 Free Software Foundation, Inc.",
+                "GNU Radio is free software released under the GNU General Public License.\n"
+                "https://www.gnuradio.org"):
+            return
         QMessageBox.about(
             self, "About GNU Radio", f"GNU Radio {config.version} (Python {py_version})"
         )
@@ -1442,9 +1789,10 @@ class MainWindow(QMainWindow, base.Component):
 
     def generate_triggered(self, called_from_exec=False):
         log.debug("generate")
-        if not self.currentFlowgraphScene.saved:
+        scene = self.currentFlowgraphScene
+        if not scene.saved or not scene.filename:
             self.save_triggered()
-        if not self.currentFlowgraphScene.saved:  # The line above was cancelled
+        if not scene.saved or not scene.filename:  # The line above was cancelled
             log.error("Cannot generate a flowgraph without saving first")
             return
 
@@ -1636,10 +1984,7 @@ class MainWindow(QMainWindow, base.Component):
             \
         """
 
-        ad = QMessageBox()
-        ad.setWindowTitle("Help")
-        ad.setText(message)
-        ad.exec()
+        native_ui.info(self, "Help", message, rich_text=True)
 
     def types_triggered(self):
         log.debug("types")
@@ -1656,10 +2001,7 @@ class MainWindow(QMainWindow, base.Component):
             for name, color in colors
         )
         message += "</tbody></table>"
-        ad = QMessageBox()
-        ad.setWindowTitle("Stream Types")
-        ad.setText(message)
-        ad.exec()
+        native_ui.info(self, "Stream Types", message, rich_text=True)
 
     def keys_triggered(self):
         log.debug("keys")
@@ -1698,10 +2040,7 @@ class MainWindow(QMainWindow, base.Component):
             \
             """
 
-        ad = QMessageBox()
-        ad.setWindowTitle("Keyboard shortcuts")
-        ad.setText(message)
-        ad.exec()
+        native_ui.info(self, "Keyboard shortcuts", message, rich_text=True)
 
     def preferences_triggered(self):
         log.debug("preferences")
@@ -1720,28 +2059,31 @@ class MainWindow(QMainWindow, base.Component):
             self.ExampleBrowser.reset()
             ex_dialog = ExampleBrowserDialog(self.ExampleBrowser)
             if len(ex_dialog.browser.examples_dict) == 0:
-                ad = QMessageBox()
-                ad.setWindowTitle("GRC: No examples found")
-                ad.setText("GRC did not find any examples. Please ensure that the example path in grc.conf is correct.")
-                ad.exec()
+                native_ui.info(
+                    self,
+                    "GRC: No examples found",
+                    "GRC did not find any examples. Please ensure that the example path in grc.conf is correct.",
+                )
                 return
 
             if isinstance(key_filter, str):
                 if not ex_dialog.browser.filter_(key_filter):
-                    ad = QMessageBox()
-                    ad.setWindowTitle("GRC: No examples")
-                    ad.setText("There are no examples for this block.")
-                    ad.exec()
+                    native_ui.info(
+                        self,
+                        "GRC: No examples",
+                        "There are no examples for this block.",
+                    )
                     return
             else:
                 ex_dialog.browser.reset()
 
             ex_dialog.exec()
         else:
-            ad = QMessageBox()
-            ad.setWindowTitle("GRC still indexing examples")
-            ad.setText("GRC is still indexing examples, please try again shortly.")
-            ad.exec()
+            native_ui.info(
+                self,
+                "GRC still indexing examples",
+                "GRC is still indexing examples, please try again shortly.",
+            )
 
     def exit_triggered(self):
         log.debug("exit")
@@ -1769,8 +2111,9 @@ class MainWindow(QMainWindow, base.Component):
         self.app.qsettings.setValue('appearance/display_variable_editor', not self.app.VariableEditor.isHidden())
 
         # Write the leftmost tab to file first
-        self.app.qsettings.setValue('window/files_open', reversed(files_open))
+        self.app.qsettings.setValue('window/files_open', list(reversed(files_open)))
         self.app.qsettings.setValue('window/windowState', self.saveState())
+        self.app.qsettings.setValue('window/layout_version', MACOS_LAYOUT_VERSION)
         self.app.qsettings.setValue('window/geometry', self.saveGeometry())
         self.app.qsettings.sync()
 

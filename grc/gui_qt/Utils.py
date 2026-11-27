@@ -1,15 +1,29 @@
 import numbers
 import os
+import sys
 import logging
 from pathlib import Path
 
-from PyQt6.QtGui import QPageLayout, QPainter, QPixmap
+from PyQt6.QtGui import QFont, QFontDatabase, QPageLayout, QPainter, QPixmap
 from PyQt6.QtPrintSupport import QPrinter
 from PyQt6.QtSvg import QSvgGenerator
 
 from . import Constants
 
 log = logging.getLogger(f"grc.application.{__name__}")
+
+
+def canvas_font(point_size):
+    """Font for text drawn on the flowgraph canvas.
+
+    macOS gets the system UI font (San Francisco) so the canvas matches the
+    rest of the application; other platforms keep Helvetica.
+    """
+    if sys.platform == "darwin":
+        font = QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont)
+        font.setPointSizeF(point_size)
+        return font
+    return QFont("Helvetica", point_size)
 
 
 def get_rotated_coordinate(coor, rotation):

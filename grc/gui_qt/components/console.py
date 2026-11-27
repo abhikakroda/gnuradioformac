@@ -171,8 +171,11 @@ class Console(QDockWidget, base.Component):
         log.debug("Creating actions")
 
         # File Actions
+        clear_icon = Icons("document-close")
+        if clear_icon.isNull():
+            clear_icon = Icons("xmark.circle")
         actions['save'] = Action(Icons("document-save"), _("save"), self, statusTip=_("save-tooltip"))
-        actions['clear'] = Action(Icons("document-close"), _("clear"), self, statusTip=_("clear-tooltip"))
+        actions['clear'] = Action(clear_icon, _("clear"), self, statusTip=_("clear-tooltip"))
         actions['show_level'] = Action(_("show-level"), self, statusTip=_("show-level"), checkable=True, checked=True)
 
         actions['auto_scroll'] = Action(

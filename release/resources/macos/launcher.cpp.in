@@ -1,0 +1,213 @@
+// Copyright 2026 Free Software Foundation, Inc.
+//
+// This file is part of GNU Radio
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Executable of "@GR_MACOS_APP_NAME@.app" (CFBundleExecutable).
+//
+// It embeds the Python interpreter and runs the GNU Radio program inside this
+// very process instead of exec'ing a separate python.  That keeps the process
+// identical to the bundle for Launch Services: the Dock shows the bundle's
+// icon and name, "Keep in Dock" and "Quit" act on this application, and
+// double-clicked .grc files are delivered to it.
+
+#include <Python.h>
+#include <limits.h>
+#include <mach-o/dyld.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <fstream>
+#include <string>
+#include <vector>
+
+namespace {
+
+const char* const APP_NAME = "@GR_MACOS_APP_NAME@";
+const char* const PROGRAM = "@GR_RUNTIME_DIR@/@GR_MACOS_APP_PROGRAM@";
+const char* const RUNTIME_DIR = "@GR_RUNTIME_DIR@";
+const char* const PYTHON_DIR = "@GR_PYTHON_DIR@";
+const char* const ICON_NAME = "@GR_MACOS_APP_ICON_NAME@";
+const char* const PROGRAM_NAME = "@GR_MACOS_APP_PROGRAM@";
+const char* const EMBEDDED_RUNTIME = "Resources/grc-runtime";
+const char* const BUILD_PYTHON = "@GR_MACOS_APP_PYTHON@";
+
+bool exists(const std::string& path)
+{
+    struct stat st;
+    return stat(path.c_str(), &st) == 0;
+}
+
+bool executable(const std::string& path)
+{
+    return access(path.c_str(), X_OK) == 0;
+}
+
+std::string dirname_of(const std::string& path)
+{
+    const auto slash = path.find_last_of('/');
+    if (slash == std::string::npos)
+        return ".";
+    return slash == 0 ? "/" : path.substr(0, slash);
+}
+
+[[noreturn]] void fail(const std::string& message)
+{
+    std::string script = std::string("display alert \"") + APP_NAME + "\" message \"";
+    for (const char c : message) {
+        if (c == '"' || c == '\\')
+            script += '\\';
+        script += c;
+    }
+    script += "\" as critical";
+    if (fork() == 0) {
+        execl("/usr/bin/osascript", "osascript", "-e", script.c_str(), (char*)nullptr);
+        _exit(1);
+    }
+    fprintf(stderr, "%s: %s\n", APP_NAME, message.c_str());
+    exit(1);
+}
+
+std::string executable_path()
+{
+    char raw[PATH_MAX];
+    uint32_t size = sizeof(raw);
+    if (_NSGetExecutablePath(raw, &size) != 0)
+        fail("Could not determine the application path.");
+    char resolved[PATH_MAX];
+    return realpath(raw, resolved) ? std::string(resolved) : std::string(raw);
+}
+
+// The interpreter named by the program's "#!" line (Homebrew, conda, venv).
+std::string shebang_python(const std::string& program)
+{
+    std::ifstream in(program);
+    std::string line;
+    if (!std::getline(in, line) || line.compare(0, 2, "#!") != 0)
+        return "";
+    std::vector<std::string> words;
+    size_t pos = 2;
+    while (pos < line.size()) {
+        const auto start = line.find_first_not_of(" \t", pos);
+        if (start == std::string::npos)
+            break;
+        const auto end = line.find_first_of(" \t", start);
+        words.push_back(line.substr(start, end - start));
+        pos = end == std::string::npos ? line.size() : end;
+    }
+    if (words.empty())
+        return "";
+    std::string candidate = words[0];
+    if (candidate.size() >= 3 && candidate.compare(candidate.size() - 3, 3, "env") == 0 &&
+        words.size() > 1)
+        candidate = words[1];
+    return (!candidate.empty() && candidate[0] == '/' && executable(candidate)) ? candidate
+                                                                              : "";
+}
+
+void prepend_env(const char* name, const std::string& value, const char* separator = ":")
+{
+    const char* old = getenv(name);
+    std::string joined = value;
+    if (old && *old)
+        joined += std::string(separator) + old;
+    setenv(name, joined.c_str(), 1);
+}
+
+} // namespace
+
+int main(int argc, char** argv)
+{
+    const std::string exe = executable_path();
+    const std::string contents_dir = dirname_of(dirname_of(exe));
+    const std::string app_dir = dirname_of(contents_dir);
+
+    // A self-contained bundle carries the GRC program, its Python package, the
+    // block definitions and PyQt6/Qt.  Otherwise the bundle lives inside (or
+    // next to) a GNU Radio install tree: walk up until the tree that holds the
+    // program is found.
+    const std::string runtime = contents_dir + "/" + EMBEDDED_RUNTIME;
+    const std::string embedded_program = runtime + "/bin/" + PROGRAM_NAME;
+    const bool embedded = exists(embedded_program);
+
+    std::string prefix;
+    std::string program;
+    if (embedded) {
+        program = embedded_program;
+    } else {
+        if (const char* env = getenv("GR_PREFIX"))
+            prefix = env;
+        if (prefix.empty()) {
+            std::string dir = app_dir;
+            while (dir != "/") {
+                dir = dirname_of(dir);
+                if (exists(dir + "/" + PROGRAM)) {
+                    prefix = dir;
+                    break;
+                }
+            }
+        }
+        if (prefix.empty())
+            fail("Could not find the GNU Radio installation this application belongs to.");
+        program = prefix + "/" + PROGRAM;
+    }
+
+    std::string python = prefix.empty() ? "" : prefix + "/" + RUNTIME_DIR + "/python.exe";
+    if (python.empty() || !executable(python))
+        python = shebang_python(program);
+    if (python.empty() && executable(BUILD_PYTHON))
+        python = BUILD_PYTHON;
+    if (python.empty())
+        fail("Python 3 was not found.");
+
+    if (embedded) {
+        prepend_env("PYTHONPATH", runtime + "/site-packages");
+        prepend_env("PYTHONPATH", runtime + "/python");
+        setenv("GRC_BLOCKS_DIR", (runtime + "/blocks").c_str(), 0);
+    } else {
+        prepend_env("PYTHONPATH", prefix + "/" + PYTHON_DIR);
+    }
+    prepend_env("PATH", "/opt/homebrew/bin:/usr/local/bin:/opt/local/bin");
+    if (!prefix.empty())
+        prepend_env("PATH", prefix + "/" + RUNTIME_DIR);
+    if (!getenv("LANG"))
+        setenv("LANG", "en_US.UTF-8", 1);
+    setenv("GRC_MACOS_APP_ICON",
+           (contents_dir + "/Resources/" + ICON_NAME + ".icns").c_str(),
+           1);
+    setenv("GRC_MACOS_APP_NAME", APP_NAME, 1);
+    setenv("PYTHONDONTWRITEBYTECODE", "1", 1);
+
+    // Finder/LaunchServices may add a process serial number argument.
+    std::vector<std::string> args = { program };
+    for (int i = 1; i < argc; ++i)
+        if (strncmp(argv[i], "-psn_", 5) != 0)
+            args.push_back(argv[i]);
+    std::vector<char*> arg_ptrs;
+    for (auto& arg : args)
+        arg_ptrs.push_back(&arg[0]);
+
+    PyConfig config;
+    PyConfig_InitPythonConfig(&config);
+    // Everything after the program is for GNU Radio, not for the interpreter.
+    config.parse_argv = 0;
+    // Keep the signed .app bundle read-only: never write __pycache__ inside it.
+    config.write_bytecode = 0;
+    PyStatus status = PyConfig_SetBytesString(&config, &config.program_name, python.c_str());
+    if (!PyStatus_Exception(status))
+        status = PyConfig_SetBytesString(&config, &config.executable, python.c_str());
+    if (!PyStatus_Exception(status))
+        status = PyConfig_SetBytesString(&config, &config.run_filename, program.c_str());
+    if (!PyStatus_Exception(status))
+        status = PyConfig_SetBytesArgv(&config, (int)arg_ptrs.size(), arg_ptrs.data());
+    if (!PyStatus_Exception(status))
+        status = Py_InitializeFromConfig(&config);
+    PyConfig_Clear(&config);
+    if (PyStatus_Exception(status))
+        fail(std::string("Could not start Python (") + python + "): " +
+             (status.err_msg ? status.err_msg : "unknown error"));
+
+    return Py_RunMain();
+}

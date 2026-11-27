@@ -30,5 +30,15 @@ elseif(APPLE)
     gen_py_program_launcher(
         PROGRAMS gnuradio-companion grcc
     )
+    include(GrMacOSBundle)
+    if(ENABLE_MACOS_APP_BUNDLE)
+        gr_install_macos_app_bundle(
+            NAME "GNU Radio Companion"
+            IDENTIFIER "org.gnuradio.grc"
+            PROGRAM gnuradio-companion
+            ICON "${CMAKE_SOURCE_DIR}/release/resources/icons/gnuradio-companion.icns"
+            DOCUMENT_ICON "${CMAKE_SOURCE_DIR}/release/resources/icons/gnuradio-companion-document.icns"
+        )
+    endif()
 endif()
 add_subdirectory(freedesktop)

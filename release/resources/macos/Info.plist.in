@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>@GR_MACOS_APP_EXECUTABLE@</string>
+    <key>CFBundleIconFile</key>
+    <string>@GR_MACOS_APP_ICON_NAME@</string>
+    <key>CFBundleIdentifier</key>
+    <string>@GR_MACOS_APP_IDENTIFIER@</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>@GR_MACOS_APP_NAME@</string>
+    <key>CFBundleDisplayName</key>
+    <string>@GR_MACOS_APP_NAME@</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleSignature</key>
+    <string>????</string>
+    <key>CFBundleShortVersionString</key>
+    <string>@GR_MACOS_APP_VERSION@</string>
+    <key>CFBundleVersion</key>
+    <string>@GR_MACOS_APP_BUILD_VERSION@</string>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>GNU Radio Companion Flow Graph</string>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>grc</string>
+            </array>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>@GR_MACOS_APP_IDENTIFIER@.flowgraph</string>
+            </array>
+            <key>CFBundleTypeIconFile</key>
+            <string>@GR_MACOS_APP_DOCUMENT_ICON_NAME@</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Owner</string>
+        </dict>
+    </array>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>@GR_MACOS_APP_IDENTIFIER@.flowgraph</string>
+            <key>UTTypeDescription</key>
+            <string>GNU Radio Companion Flow Graph</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.xml</string>
+                <string>public.data</string>
+            </array>
+            <key>UTTypeIconFile</key>
+            <string>@GR_MACOS_APP_DOCUMENT_ICON_NAME@</string>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>grc</string>
+                </array>
+            </dict>
+        </dict>
+    </array>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.developer-tools</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>@GR_MACOS_APP_MIN_SYSTEM_VERSION@</string>
+    <key>LSUIElement</key>
+    <false/>
+    <key>NSSupportsSuddenTermination</key>
+    <false/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>GNU Radio flowgraphs can record audio from the microphone through the Audio Source block.</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>@GR_MACOS_APP_COPYRIGHT@</string>
+</dict>
+</plist>
